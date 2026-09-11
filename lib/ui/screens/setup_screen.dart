@@ -7,6 +7,7 @@ import '../../domain/game_engine.dart';
 import '../../domain/models.dart';
 import '../app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/feedback_widgets.dart';
 import 'game_screen.dart';
 
 class SetupScreen extends StatefulWidget {
@@ -232,7 +233,16 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _start() async {
     setState(() => _saving = true);
     try {
+      final preview = widget.controller.engine.startGame(_players, _unit);
+      final amounts = await showModalBottomSheet<List<int>>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (_) => RoundSettingsSheet(game: preview),
+      );
+      if (amounts == null) return;
       await widget.controller.startGame(_players, _unit);
+      await widget.controller.configureRound(amounts[0], amounts[1]);
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       await Navigator.of(context)

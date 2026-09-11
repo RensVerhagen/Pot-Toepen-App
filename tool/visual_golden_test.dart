@@ -132,6 +132,9 @@ class _MemoryRepository implements GameRepository {
   final List<GameRecord> games = [];
 
   @override
+  Future<void> clearAllData() async => games.clear();
+
+  @override
   Future<void> clearHistory() async =>
       games.removeWhere((game) => game.status != GameStatus.active);
 

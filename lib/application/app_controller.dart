@@ -40,6 +40,38 @@ class AppController extends ChangeNotifier {
     return game;
   }
 
+  int recordFor(ScoreUnit unit) => [
+    for (final game in [..._history, ?_activeGame])
+      if (game.unit == unit) game.highestPot,
+    0,
+  ].reduce((a, b) => a > b ? a : b);
+
+  Future<void> revealDealer() =>
+      _replaceActive(engine.revealDealer(_requiredGame));
+  Future<void> configureRound(int toepTrek, int allPass) =>
+      _replaceActive(engine.configureRound(_requiredGame, toepTrek, allPass));
+  Future<void> reorderPlayers(List<String> ids) =>
+      _replaceActive(engine.reorderPlayers(_requiredGame, ids));
+  Future<void> topUp(int amount) =>
+      _replaceActive(engine.topUp(_requiredGame, amount));
+  Future<void> processAllPass(String id) =>
+      _replaceActive(engine.processAllPass(_requiredGame, id));
+  Future<void> processToepTrek(String id) =>
+      _replaceActive(engine.processToepTrek(_requiredGame, id));
+  Future<GameRecord> completeGame() async {
+    final next = engine.completeGame(_requiredGame);
+    await _saveTerminalOrActive(next);
+    return next;
+  }
+
+  Future<void> clearAllData() async {
+    await repository.clearAllData();
+    _activeGame = null;
+    _history = const [];
+    _rememberedPlayers = const [];
+    notifyListeners();
+  }
+
   Future<void> setStake(String playerId, int stake) async {
     await _replaceActive(engine.setDraftStake(_requiredGame, playerId, stake));
   }
@@ -52,6 +84,7 @@ class AppController extends ChangeNotifier {
     final game = _activeGame;
     if (game == null ||
         !game.hasCompleteDraft ||
+        game.allPassed ||
         game.phase != GamePhase.normal) {
       return null;
     }

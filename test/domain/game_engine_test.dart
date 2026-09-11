@@ -118,8 +118,9 @@ void main() {
       game = engine.processPayoutRound(game);
     }
 
-    expect(game.status, GameStatus.completed);
+    expect(game.status, GameStatus.active);
     expect(game.pot, 0);
+    expect(engine.completeGame(game).status, GameStatus.completed);
     expect(game.players[1].score, originalLoserScore);
     expect(game.players[0].score, 5);
   });

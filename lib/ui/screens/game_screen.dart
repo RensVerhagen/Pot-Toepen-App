@@ -9,6 +9,7 @@ import '../../domain/game_engine.dart';
 import '../../domain/models.dart';
 import '../app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/feedback_widgets.dart';
 import 'results_screen.dart';
 
 class GameScreen extends StatefulWidget {
@@ -23,11 +24,23 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   RoundRecord? _celebration;
   late GameRecord _lastGame;
+  bool _busy = false;
+  int _recordLevel = 0;
 
   @override
   void initState() {
     super.initState();
     _lastGame = widget.controller.activeGame!;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!_lastGame.dealerRevealed && mounted) {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => DealerReveal(game: _lastGame),
+        );
+        if (mounted) await widget.controller.revealDealer();
+      }
+    });
   }
 
   @override
@@ -58,12 +71,28 @@ class _GameScreenState extends State<GameScreen> {
                     tooltip: 'Meer',
                     onSelected: (value) => switch (value) {
                       'history' => _showHistory(),
+                      'games' => _showGames(),
+                      'players' => _reorder(game),
+                      'finish' => _finish(),
                       'closing' => _openClosingSetup(game),
                       'cancel-closing' => _cancelClosing(),
                       'abandon' => _abandon(),
                       _ => null,
                     },
+                    icon: const Icon(Icons.more_horiz_rounded),
                     itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'players',
+                        child: Text('Spelers wijzigen'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'games',
+                        child: Text('Spelgeschiedenis'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'finish',
+                        child: Text('Spel afronden'),
+                      ),
                       const PopupMenuItem(
                         value: 'history',
                         child: ListTile(
@@ -116,19 +145,57 @@ class _GameScreenState extends State<GameScreen> {
                     children: [
                       PotDisplay(value: game.pot, unit: game.unit),
                       const SizedBox(height: 20),
+                      GlassCard(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.style_rounded,
+                              color: AppColors.gold,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Deler · ${game.playerById(game.dealerId).name}',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium,
+                                  ),
+                                  Text(
+                                    game.lastWinnerId == null
+                                        ? '${game.stakeOrder.first.name} begint'
+                                        : 'Laatste winnaar: ${game.playerById(game.lastWinnerId!).name}',
+                                    style: const TextStyle(
+                                      color: AppColors.gold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
                       if (game.phase == GamePhase.normal)
                         _NormalRound(
                           game: game,
                           controller: widget.controller,
                           onStake: _openStakeFlow,
                           onProcess: _processNormal,
-                          onClosing: () => _openClosingSetup(game),
+                          onClosing: _finish,
+                          onSettings: () => _configure(game),
+                          onTopUp: _topUp,
+                          onToepTrek: _toepTrek,
                         )
                       else
                         _PayoutRound(
                           game: game,
                           controller: widget.controller,
                           onProcess: _processPayout,
+                          onFinish: _finish,
                           onChangeSchedule: () => _changeClosingSchedule(game),
                         ),
                     ],
@@ -141,6 +208,7 @@ class _GameScreenState extends State<GameScreen> {
                 key: ValueKey(_celebration!.id),
                 game: game,
                 round: _celebration!,
+                recordLevel: _recordLevel,
                 onFinished: () {
                   if (mounted) setState(() => _celebration = null);
                 },
@@ -151,79 +219,248 @@ class _GameScreenState extends State<GameScreen> {
     },
   );
 
-  bool _canUndo(GameRecord game) =>
-      game.rounds.isNotEmpty &&
-      !(game.phase == GamePhase.closing &&
-          game.closingRoundIndex == 0 &&
-          game.rounds.last.kind == RoundKind.normal);
+  bool _canUndo(GameRecord game) => !_busy && game.canUndo;
 
-  Future<void> _openStakeFlow(String playerId) => showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    builder: (context) => StakeFlowSheet(
-      controller: widget.controller,
-      initialPlayerId: playerId,
-    ),
-  );
+  Future<bool> _configure(GameRecord game) async {
+    final values = await showModalBottomSheet<List<int>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => RoundSettingsSheet(game: game),
+    );
+    if (values == null) return false;
+    await widget.controller.configureRound(values[0], values[1]);
+    return true;
+  }
 
-  Future<void> _processNormal() async {
-    try {
-      HapticFeedback.mediumImpact();
-      final round = await widget.controller.processNormalRound();
-      if (!mounted) return;
-      setState(() => _celebration = round);
-      _showUndoSnackBar(round);
-    } on GameRuleException catch (error) {
-      _showError(error.message);
+  Future<void> _openStakeFlow(String playerId) async {
+    if (_busy) return;
+    final game = widget.controller.activeGame!;
+    if (!game.roundConfigured && game.draftStakes.isEmpty) {
+      if (!await _configure(game) || !mounted) return;
+    }
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => StakeFlowSheet(
+        controller: widget.controller,
+        initialPlayerId: playerId,
+      ),
+    );
+    if (mounted && widget.controller.activeGame!.allPassed) {
+      await _processNormal();
     }
   }
 
-  Future<void> _processPayout() async {
+  Future<void> _run(Future<void> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
     try {
-      HapticFeedback.heavyImpact();
-      final result = await widget.controller.processPayoutRound();
-      if (!mounted) return;
-      if (result.status == GameStatus.completed) {
-        await Navigator.of(context).pushReplacement(
-          potRoute(ResultsScreen(controller: widget.controller, game: result)),
-        );
-      } else {
-        setState(() => _celebration = result.rounds.last);
-        _showUndoSnackBar(result.rounds.last);
-      }
-    } on GameRuleException catch (error) {
-      _showError(error.message);
-    }
-  }
-
-  void _showUndoSnackBar(RoundRecord round) {
-    final winner = _lastGame.playerById(round.winnerPlayerId);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('${winner.name} won deze ronde'),
-          action: SnackBarAction(label: 'UNDO', onPressed: _undo),
-        ),
+      await action();
+    } catch (error) {
+      _showError(
+        error is GameRuleException
+            ? error.message
+            : 'Opslaan mislukt. Probeer opnieuw.',
       );
-  }
-
-  Future<void> _undo() async {
-    try {
-      await widget.controller.undo();
-      HapticFeedback.selectionClick();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Laatste ronde ongedaan gemaakt')),
-        );
-      }
-    } on GameRuleException catch (error) {
-      _showError(error.message);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
+
+  void _celebrate(GameRecord before, int recordBefore) {
+    final game = widget.controller.activeGame!;
+    final round = game.rounds.last;
+    final level = game.pot > recordBefore
+        ? 2
+        : game.pot > before.highestPot
+        ? 1
+        : 0;
+    HapticFeedback.mediumImpact();
+    if (mounted) {
+      setState(() {
+        _recordLevel = level;
+        _celebration = round;
+      });
+    }
+  }
+
+  Future<void> _processNormal() => _run(() async {
+    final game = widget.controller.activeGame!;
+    if (game.draftStakes.length != game.players.length) return;
+    final winner = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _RoundReviewSheet(game: game),
+    );
+    if (winner == null || !mounted) return;
+    final record = widget.controller.recordFor(game.unit);
+    if (game.allPassed) {
+      await widget.controller.processAllPass(winner);
+    } else {
+      await widget.controller.setWinner(winner);
+      await widget.controller.processNormalRound();
+    }
+    _celebrate(game, record);
+  });
+
+  Future<void> _processPayout() => _run(() async {
+    final game = widget.controller.activeGame!;
+    final projection = widget.controller.payoutProjection;
+    if (projection == null) return;
+    if (!await confirmAction(
+      context,
+      'Finaleronde afronden?',
+      '${game.playerById(projection.winnerPlayerId).name} ontvangt ${game.unit.format(projection.payout!)}.',
+    )) {
+      return;
+    }
+    final record = widget.controller.recordFor(game.unit);
+    await widget.controller.processPayoutRound();
+    _celebrate(game, record);
+  });
+
+  Future<void> _undo() => _run(() async {
+    if (!await confirmAction(
+      context,
+      'Laatste actie ongedaan maken?',
+      'De vorige stand wordt hersteld. Je kunt daarna opnieuw de laatste actie terugdraaien.',
+      action: 'Ongedaan maken',
+    )) {
+      return;
+    }
+    await widget.controller.undo();
+    if (mounted) setState(() => _celebration = null);
+    HapticFeedback.selectionClick();
+  });
+
+  Future<void> _topUp(int amount) => _run(() async {
+    final game = widget.controller.activeGame!;
+    if (!await confirmAction(
+      context,
+      'Pot bijspekken?',
+      '${game.players.length} spelers × ${game.unit.format(amount)} = ${game.unit.format(amount * game.players.length)} toevoegen aan de pot?',
+    )) {
+      return;
+    }
+    final record = widget.controller.recordFor(game.unit);
+    await widget.controller.topUp(amount);
+    _celebrate(game, record);
+  });
+
+  Future<void> _toepTrek() => _run(() async {
+    var game = widget.controller.activeGame!;
+    if (!game.roundConfigured) {
+      if (!await _configure(game) || !mounted) return;
+      game = widget.controller.activeGame!;
+    }
+    final amount = math.min(game.toepTrekAmount, game.pot);
+    final player = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SectionHeading(title: 'Wie heeft Toep-trek?'),
+                const SizedBox(height: 12),
+                Text('Uitbetaling: ${game.unit.format(amount)}'),
+                for (final p in game.players)
+                  ListTile(
+                    title: Text(p.name),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.pop(context, p.id),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (player == null || !mounted) return;
+    if (!await confirmAction(
+      context,
+      'Toep-trek uitbetalen?',
+      '${game.playerById(player).name} ontvangt ${game.unit.format(amount)}. Er blijft ${game.unit.format(game.pot - amount)} over.',
+    )) {
+      return;
+    }
+    final record = widget.controller.recordFor(game.unit);
+    await widget.controller.processToepTrek(player);
+    _celebrate(game, record);
+  });
+
+  Future<void> _reorder(GameRecord game) async {
+    if (game.draftStakes.isNotEmpty) {
+      _showError('Rond eerst de huidige inzetten af.');
+      return;
+    }
+    final ids = await showModalBottomSheet<List<String>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => PlayerOrderSheet(game: game),
+    );
+    if (ids != null) await _run(() => widget.controller.reorderPlayers(ids));
+  }
+
+  Future<void> _showGames() async {
+    final game = await showModalBottomSheet<GameRecord>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => GameHistorySheet(
+        controller: widget.controller,
+        onCleared: () {
+          if (mounted) Navigator.pop(context);
+        },
+      ),
+    );
+    if (game != null && mounted) {
+      await Navigator.push(
+        context,
+        potRoute(ResultsScreen(controller: widget.controller, game: game)),
+      );
+    }
+  }
+
+  Future<void> _finish() => _run(() async {
+    final game = widget.controller.activeGame!;
+    if (game.draftStakes.isNotEmpty) {
+      _showError('Rond eerst de huidige inzetten af.');
+      return;
+    }
+    if (!await confirmAction(
+      context,
+      'Spel afronden?',
+      game.pot == 0
+          ? 'De eindstand en grafiek worden opgeslagen in de spelgeschiedenis.'
+          : 'Er zit nog ${game.unit.format(game.pot)} in de pot. Afronden bewaart deze resterende pot; kies Start finale in het menu om hem eerst uit te spelen.',
+      action: 'Spel afronden',
+    )) {
+      return;
+    }
+    final result = await widget.controller.completeGame();
+    if (mounted) {
+      await Navigator.pushReplacement(
+        context,
+        potRoute(ResultsScreen(controller: widget.controller, game: result)),
+      );
+    }
+  });
 
   Future<void> _openClosingSetup(GameRecord game) async {
+    if (game.draftStakes.isNotEmpty) {
+      _showError('Rond eerst de huidige inzetten af.');
+      return;
+    }
     if (game.pot == 0) {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -330,224 +567,258 @@ class _NormalRound extends StatelessWidget {
     required this.onStake,
     required this.onProcess,
     required this.onClosing,
+    required this.onSettings,
+    required this.onTopUp,
+    required this.onToepTrek,
   });
-
   final GameRecord game;
   final AppController controller;
   final ValueChanged<String> onStake;
-  final VoidCallback onProcess;
-  final VoidCallback onClosing;
-
+  final VoidCallback onProcess, onClosing, onSettings, onToepTrek;
+  final ValueChanged<int> onTopUp;
   @override
   Widget build(BuildContext context) {
-    final projection = controller.normalProjection;
+    final order = game.stakeOrder;
+    final next = order.firstWhere(
+      (p) => !game.draftStakes.containsKey(p.id),
+      orElse: () => order.first,
+    );
+    final ready = game.draftStakes.length == game.players.length;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            const Expanded(child: SectionHeading(title: 'Inzet & winnaar')),
+            const Expanded(child: SectionHeading(title: 'Aan tafel')),
             StatusPill(
               label:
-                  '${game.draftStakes.length}/${game.players.length} INGEVULD',
-              icon: Icons.edit_rounded,
-              color: game.draftStakes.length == game.players.length
-                  ? AppColors.mint
-                  : AppColors.gold,
+                  '${game.draftStakes.length}/${game.players.length} INGEZET',
+              icon: Icons.check_rounded,
             ),
           ],
         ),
         const SizedBox(height: 14),
-        for (var index = 0; index < game.players.length; index++) ...[
-          StaggeredEntrance(
-            index: index,
-            child: _PlayerRoundCard(
-              game: game,
-              player: game.players[index],
-              isWinner: game.draftWinnerPlayerId == game.players[index].id,
-              stake: game.draftStakes[game.players[index].id],
-              onStake: () => onStake(game.players[index].id),
-              onPot: () async {
-                HapticFeedback.selectionClick();
-                await controller.setStake(game.players[index].id, game.pot);
-              },
-              onWinner: () async {
-                HapticFeedback.selectionClick();
-                await controller.setWinner(game.players[index].id);
-              },
+        for (var i = 0; i < order.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: GlassCard(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              borderColor: !ready && next.id == order[i].id
+                  ? AppColors.gold
+                  : null,
+              onTap: () => onStake(
+                game.draftStakes.containsKey(order[i].id)
+                    ? order[i].id
+                    : next.id,
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: AppColors.raised,
+                    foregroundColor: AppColors.gold,
+                    child: Text('${i + 1}'),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order[i].name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          order[i].id == game.dealerId
+                              ? 'Deler'
+                              : !ready && next.id == order[i].id
+                              ? 'Als volgende aan de beurt'
+                              : 'Speler',
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    flex: 1,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: ScoreText(
+                            score: order[i].score,
+                            unit: game.unit,
+                          ),
+                        ),
+                        Text(
+                          !game.draftStakes.containsKey(order[i].id)
+                              ? 'Nog geen inzet'
+                              : game.draftStakes[order[i].id] == 0
+                              ? 'Gepast'
+                              : 'Inzet ${game.unit.format(game.draftStakes[order[i].id]!)}',
+                          textAlign: TextAlign.end,
+                          style: const TextStyle(
+                            color: AppColors.mutedCream,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 11),
-        ],
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          child: projection == null
-              ? GlassCard(
-                  key: const ValueKey('hint'),
-                  padding: const EdgeInsets.all(15),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.touch_app_outlined,
-                        color: AppColors.gold,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          game.draftStakes.length < game.players.length
-                              ? 'Vul voor iedereen een inzet in — ook als die 0 is.'
-                              : 'Alle inzetten staan klaar. Kies nu de winnaar.',
-                        ),
-                      ),
-                    ],
+        const SizedBox(height: 6),
+        FilledButton.icon(
+          onPressed: () => onStake(next.id),
+          icon: const Icon(Icons.payments_outlined),
+          label: Text(ready ? 'Inzetten wijzigen' : 'Inzetten'),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton.icon(
+          onPressed: ready ? onProcess : null,
+          icon: const Icon(Icons.emoji_events_outlined),
+          label: const Text('Ronde afronden'),
+        ),
+        const SizedBox(height: 20),
+        GlassCard(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Expanded(child: Text('Afspraken voor deze ronde')),
+                  IconButton(
+                    tooltip: 'Rondebedragen instellen',
+                    onPressed: game.draftStakes.isEmpty ? onSettings : null,
+                    icon: const Icon(Icons.tune_rounded),
                   ),
-                )
-              : _ProjectionCard(
-                  key: const ValueKey('preview'),
-                  game: game,
-                  projection: projection,
-                ),
+                ],
+              ),
+              Text(
+                'Toep-trek ${game.unit.format(game.toepTrekAmount)} · Iedereen past ${game.unit.format(game.allPassAmount)}',
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: game.draftStakes.isEmpty && game.pot > 0
+                    ? onToepTrek
+                    : null,
+                icon: const Icon(Icons.style_rounded),
+                label: const Text('Toep-trek'),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        const SectionHeading(title: 'Pot bijspekken'),
+        const SizedBox(height: 6),
+        const Text('Iedereen legt hetzelfde bedrag bij.'),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final n in [1, 2, 3, 5])
+              ActionChip(
+                label: Text(game.unit.format(n)),
+                avatar: const Icon(Icons.add_rounded, size: 16),
+                onPressed: game.draftStakes.isEmpty ? () => onTopUp(n) : null,
+              ),
+          ],
         ),
         const SizedBox(height: 16),
-        FilledButton.icon(
-          onPressed: projection == null ? null : onProcess,
-          icon: const Icon(Icons.check_rounded),
-          label: const Text('Ronde verwerken'),
-        ),
-        const SizedBox(height: 8),
         TextButton.icon(
           onPressed: onClosing,
           icon: const Icon(Icons.flag_outlined),
-          label: const Text('Normaal spel stoppen — start finale'),
+          label: const Text('Spel afronden'),
         ),
       ],
     );
   }
 }
 
-class _PlayerRoundCard extends StatelessWidget {
-  const _PlayerRoundCard({
-    required this.game,
-    required this.player,
-    required this.isWinner,
-    required this.stake,
-    required this.onStake,
-    required this.onPot,
-    required this.onWinner,
-  });
-
+class _RoundReviewSheet extends StatefulWidget {
+  const _RoundReviewSheet({required this.game});
   final GameRecord game;
-  final PlayerScore player;
-  final bool isWinner;
-  final int? stake;
-  final VoidCallback onStake;
-  final VoidCallback onPot;
-  final VoidCallback onWinner;
-
   @override
-  Widget build(BuildContext context) => GlassCard(
-    color: isWinner
-        ? AppColors.gold.withValues(alpha: .12)
-        : AppColors.deepGreen.withValues(alpha: .92),
-    borderColor: isWinner
-        ? AppColors.gold.withValues(alpha: .85)
-        : const Color(0xFF315548),
-    padding: const EdgeInsets.fromLTRB(16, 12, 11, 12),
-    child: Row(
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 240),
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            color: isWinner
-                ? AppColors.gold
-                : AppColors.raised.withValues(alpha: .9),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: IconButton(
-            tooltip: '${player.name} als winnaar kiezen',
-            onPressed: onWinner,
-            icon: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              child: Icon(
-                isWinner
-                    ? Icons.emoji_events_rounded
-                    : Icons.emoji_events_outlined,
-                key: ValueKey(isWinner),
-                color: isWinner ? AppColors.black : AppColors.mutedCream,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 13),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(player.name, style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 2),
-              ScoreText(score: player.score, unit: game.unit),
-            ],
-          ),
-        ),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
+  State<_RoundReviewSheet> createState() => _RoundReviewSheetState();
+}
+
+class _RoundReviewSheetState extends State<_RoundReviewSheet> {
+  String? _winner;
+  @override
+  Widget build(BuildContext context) {
+    final game = widget.game;
+    final projection = _winner == null || game.allPassed
+        ? null
+        : GameEngine().previewNormalRound(
+            game.copyWith(draftWinnerPlayerId: _winner),
+          );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            InkWell(
-              onTap: onStake,
-              borderRadius: BorderRadius.circular(14),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 220),
-                constraints: const BoxConstraints(minWidth: 76),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                  vertical: 9,
-                ),
-                decoration: BoxDecoration(
-                  color: stake == null
-                      ? AppColors.coral.withValues(alpha: .1)
-                      : AppColors.mint.withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: stake == null
-                        ? AppColors.coral.withValues(alpha: .5)
-                        : AppColors.mint.withValues(alpha: .42),
-                  ),
-                ),
-                child: Text(
-                  stake == null ? '—' : game.unit.format(stake!),
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: stake == null ? AppColors.coral : AppColors.mint,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+            SectionHeading(
+              title: game.allPassed
+                  ? 'Iedereen heeft gepast'
+                  : 'Ronde afronden',
+            ),
+            const SizedBox(height: 8),
+            Text(
+              game.allPassed
+                  ? 'Teruguittoepen · wie had de hoogste hand? Deze speler betaalt ${game.unit.format(game.allPassAmount)} aan de pot.'
+                  : 'Controleer de inzetten en kies de winnaar.',
+            ),
+            const SizedBox(height: 14),
+            RadioGroup<String>(
+              groupValue: _winner,
+              onChanged: (value) => setState(() => _winner = value),
+              child: Column(
+                children: [
+                  for (final p in game.stakeOrder)
+                    RadioListTile<String>(
+                      value: p.id,
+                      enabled: game.allPassed || game.draftStakes[p.id] != 0,
+                      title: Text(p.name),
+                      subtitle: Text(
+                        game.draftStakes[p.id] == 0
+                            ? 'Gepast'
+                            : 'Inzet ${game.unit.format(game.draftStakes[p.id]!)}',
+                      ),
+                    ),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            TextButton(
-              onPressed: onPot,
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+            if (projection != null)
+              _ProjectionCard(game: game, projection: projection),
+            if (_winner != null && game.allPassed)
+              GlassCard(
+                child: Text(
+                  '${game.playerById(_winner!).name} betaalt ${game.unit.format(game.allPassAmount)}. Pot: ${game.unit.format(game.pot)} → ${game.unit.format(game.pot + game.allPassAmount)}',
+                ),
               ),
-              child: Text('POT ${game.unit.format(game.pot)}'),
+            const SizedBox(height: 18),
+            FilledButton.icon(
+              onPressed: _winner == null
+                  ? null
+                  : () => Navigator.pop(context, _winner),
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Uitkomst bevestigen'),
             ),
           ],
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class _ProjectionCard extends StatelessWidget {
-  const _ProjectionCard({
-    super.key,
-    required this.game,
-    required this.projection,
-  });
+  const _ProjectionCard({required this.game, required this.projection});
 
   final GameRecord game;
   final RoundProjection projection;
@@ -617,15 +888,40 @@ class _PayoutRound extends StatelessWidget {
     required this.controller,
     required this.onProcess,
     required this.onChangeSchedule,
+    required this.onFinish,
   });
 
   final GameRecord game;
   final AppController controller;
   final VoidCallback onProcess;
   final VoidCallback onChangeSchedule;
+  final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) {
+    if (game.closingRoundIndex >= game.closingPayouts.length) {
+      return GlassCard(
+        child: Column(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: AppColors.mint,
+              size: 40,
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'De pot is uitgespeeld. Sla de eindstand op of maak de laatste actie ongedaan.',
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: onFinish,
+              icon: const Icon(Icons.flag_outlined),
+              label: const Text('Spel afronden'),
+            ),
+          ],
+        ),
+      );
+    }
     final payout = game.closingPayouts[game.closingRoundIndex];
     final projection = controller.payoutProjection;
     return Column(
@@ -747,7 +1043,7 @@ class _PayoutRound extends StatelessWidget {
           icon: const Icon(Icons.emoji_events_rounded),
           label: Text(
             game.closingRoundIndex == game.closingPayouts.length - 1
-                ? 'Laatste winnaar & afronden'
+                ? 'Laatste finaleronde verwerken'
                 : 'Finaleronde verwerken',
           ),
         ),
@@ -862,9 +1158,7 @@ class _StakeFlowSheetState extends State<StakeFlowSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final quickAmounts = [
-      for (var value = 0; value <= math.min(5, _game.pot); value++) value,
-    ];
+    final quickAmounts = [0, 1, 2, 3, 4, 5, 10, 15, 20, 25];
     return Padding(
       padding: EdgeInsets.fromLTRB(
         20,
@@ -877,14 +1171,23 @@ class _StakeFlowSheetState extends State<StakeFlowSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: _game.draftStakes.length / _game.players.length,
+              color: AppColors.gold,
+              backgroundColor: AppColors.raised,
+            ),
+            const SizedBox(height: 16),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 250),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 420),
               transitionBuilder: (child, animation) => FadeTransition(
                 opacity: animation,
                 child: SlideTransition(
                   position: Tween(
-                    begin: const Offset(.08, 0),
+                    begin: child.key == ValueKey(_playerId)
+                        ? const Offset(1, 0)
+                        : const Offset(-1, 0),
                     end: Offset.zero,
                   ).animate(animation),
                   child: child,
@@ -919,12 +1222,16 @@ class _StakeFlowSheetState extends State<StakeFlowSheet> {
               children: [
                 for (final amount in quickAmounts)
                   FilledButton.tonal(
-                    onPressed: _saving ? null : () => _saveAndAdvance(amount),
+                    onPressed: _saving || amount > _game.pot
+                        ? null
+                        : () => _saveAndAdvance(amount),
                     style: FilledButton.styleFrom(
                       minimumSize: const Size(58, 52),
                       padding: const EdgeInsets.symmetric(horizontal: 15),
                     ),
-                    child: Text(_game.unit.format(amount)),
+                    child: Text(
+                      amount == 0 ? 'Pas' : _game.unit.format(amount),
+                    ),
                   ),
               ],
             ),
@@ -1021,11 +1328,23 @@ class _StakeFlowSheetState extends State<StakeFlowSheet> {
   }
 
   Future<void> _saveAndAdvance(int amount) async {
+    if (_saving) return;
     setState(() => _saving = true);
-    await widget.controller.setStake(_playerId, amount);
+    if (_saving && !mounted) return;
+    try {
+      await widget.controller.setStake(_playerId, amount);
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = 'Opslaan mislukt. Probeer opnieuw.';
+        });
+      }
+      return;
+    }
     HapticFeedback.selectionClick();
     if (!mounted) return;
-    final next = _game.players.cast<PlayerScore?>().firstWhere(
+    final next = _game.stakeOrder.cast<PlayerScore?>().firstWhere(
       (player) =>
           player!.id != _playerId && !_game.draftStakes.containsKey(player.id),
       orElse: () => null,
@@ -1237,9 +1556,7 @@ class _RoundHistorySheet extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    round.kind == RoundKind.payout
-                                        ? 'Finaleronde · ${winner.name}'
-                                        : 'Ronde $originalIndex · ${winner.name}',
+                                    '${round.kind.label} $originalIndex · ${round.kind == RoundKind.topUp ? 'Iedereen' : winner.name}',
                                     style: Theme.of(context)
                                         .textTheme
                                         .titleMedium,
@@ -1283,11 +1600,13 @@ class _RoundCelebration extends StatefulWidget {
     super.key,
     required this.game,
     required this.round,
+    required this.recordLevel,
     required this.onFinished,
   });
 
   final GameRecord game;
   final RoundRecord round;
+  final int recordLevel;
   final VoidCallback onFinished;
 
   @override
@@ -1304,7 +1623,9 @@ class _RoundCelebrationState extends State<_RoundCelebration>
     _controller =
         AnimationController(
             vsync: this,
-            duration: const Duration(milliseconds: 1150),
+            duration: Duration(
+              milliseconds: widget.recordLevel == 2 ? 2600 : 1300,
+            ),
           )
           ..addStatusListener((status) {
             if (status == AnimationStatus.completed) widget.onFinished();
@@ -1321,16 +1642,29 @@ class _RoundCelebrationState extends State<_RoundCelebration>
   @override
   Widget build(BuildContext context) {
     final winner = widget.game.playerById(widget.round.winnerPlayerId);
-    final amount = widget.round.kind == RoundKind.payout
-        ? widget.round.payout!
-        : widget.round.stakes[widget.round.winnerPlayerId]!;
+    final amount =
+        widget.round.payout ??
+        widget.round.stakes[widget.round.winnerPlayerId] ??
+        0;
+    final reduced = MediaQuery.disableAnimationsOf(context);
+    final headline = widget.recordLevel == 2
+        ? 'Nieuw all-time potrecord!'
+        : widget.recordLevel == 1
+        ? 'Nieuw potrecord dit spel!'
+        : widget.round.kind == RoundKind.topUp
+        ? 'Samen de pot gespekt'
+        : widget.round.kind == RoundKind.allPass
+        ? 'Teruguitgetoept'
+        : winner.name;
     return IgnorePointer(
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) {
-          final entrance = Curves.elasticOut.transform(
-            (_controller.value / .55).clamp(0.0, 1.0),
-          );
+          final entrance = reduced
+              ? 1.0
+              : Curves.elasticOut.transform(
+                  (_controller.value / .55).clamp(0.0, 1.0),
+                );
           final fade = _controller.value < .72
               ? 1.0
               : 1 - ((_controller.value - .72) / .28);
@@ -1342,38 +1676,57 @@ class _RoundCelebrationState extends State<_RoundCelebration>
                 fit: StackFit.expand,
                 alignment: Alignment.center,
                 children: [
-                  CustomPaint(
-                    painter: _BurstPainter(progress: _controller.value),
-                  ),
+                  if (!reduced)
+                    CustomPaint(
+                      painter: _BurstPainter(
+                        progress: _controller.value,
+                        level: widget.recordLevel,
+                      ),
+                    ),
                   Center(
                     child: Transform.scale(
                       scale: entrance,
-                      child: GlassCard(
-                        color: AppColors.gold,
-                        borderColor: AppColors.goldSoft,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.emoji_events_rounded,
-                              size: 46,
-                              color: AppColors.black,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: GlassCard(
+                            color: AppColors.gold,
+                            borderColor: AppColors.goldSoft,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.emoji_events_rounded,
+                                  size: 46,
+                                  color: AppColors.black,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  headline,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .headlineMedium
+                                      ?.copyWith(color: AppColors.black),
+                                ),
+                                Text(
+                                  widget.recordLevel > 0
+                                      ? widget.game.unit.format(widget.game.pot)
+                                      : widget.round.kind == RoundKind.topUp
+                                      ? '+${widget.game.unit.format(widget.round.potAfter - widget.round.potBefore)} in de pot'
+                                      : widget.round.kind == RoundKind.allPass
+                                      ? '${winner.name} betaalt ${widget.game.unit.format(amount)}'
+                                      : '+${widget.game.unit.format(amount)}',
+                                  style: const TextStyle(
+                                    color: AppColors.black,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              winner.name,
-                              style: Theme.of(context).textTheme.headlineMedium
-                                  ?.copyWith(color: AppColors.black),
-                            ),
-                            Text(
-                              '+${widget.game.unit.format(amount)}',
-                              style: const TextStyle(
-                                color: AppColors.black,
-                                fontSize: 20,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -1389,7 +1742,8 @@ class _RoundCelebrationState extends State<_RoundCelebration>
 }
 
 class _BurstPainter extends CustomPainter {
-  _BurstPainter({required this.progress});
+  _BurstPainter({required this.progress, required this.level});
+  final int level;
 
   final double progress;
 
@@ -1403,11 +1757,22 @@ class _BurstPainter extends CustomPainter {
       AppColors.coral,
       AppColors.cream,
     ];
-    for (var index = 0; index < 30; index++) {
-      final angle = index * (math.pi * 2 / 30) + (index % 3) * .12;
-      final distance = (60 + (index % 6) * 24) * travel;
+    final count = level == 2
+        ? 150
+        : level == 1
+        ? 48
+        : 24;
+    for (var index = 0; index < count; index++) {
+      final angle = index * (math.pi * 2 / count) + (index % 3) * .12;
+      final distance = (60 + (index % 9) * (level == 2 ? 44 : 20)) * travel;
       final position =
-          center + Offset(math.cos(angle), math.sin(angle)) * distance;
+          (level == 2
+              ? Offset(
+                  size.width * (.2 + (index % 3) * .3),
+                  size.height * (.2 + (index % 4) * .17),
+                )
+              : center) +
+          Offset(math.cos(angle), math.sin(angle)) * distance;
       final paint = Paint()
         ..color = colors[index % colors.length].withValues(
           alpha: (1 - progress).clamp(0, 1),
