@@ -4,6 +4,7 @@ import 'package:pot_toepen/application/app_controller.dart';
 import 'package:pot_toepen/domain/models.dart';
 import 'package:pot_toepen/ui/app_theme.dart';
 import 'package:pot_toepen/ui/screens/game_screen.dart';
+import 'package:pot_toepen/ui/screens/setup_screen.dart';
 import 'package:pot_toepen/ui/widgets/feedback_widgets.dart';
 
 import 'support/memory_repository.dart';
@@ -15,14 +16,13 @@ void main() {
     repository = MemoryRepository();
     controller = AppController(repository: repository);
     await controller.initialize();
-    await controller.startGame([
-      'Rens',
-      'Thijs',
-      'Jan',
-      'Piet',
-    ], ScoreUnit.euro);
+    await controller.startGame(
+      ['Rens', 'Thijs', 'Jan', 'Piet'],
+      ScoreUnit.euro,
+      toepTrekAmount: 10,
+      allPassAmount: 3,
+    );
     await controller.revealDealer();
-    await controller.configureRound(10, 3);
   });
   Future<void> mount(
     WidgetTester tester,
@@ -52,6 +52,98 @@ void main() {
     await tester.tap(finder);
     await tester.pumpAndSettle();
   }
+
+  testWidgets(
+    'zero-stake winner receives zero, deals next and no new settings appear',
+    (tester) async {
+      final original = controller.activeGame!;
+      final winner = original.players.first;
+      for (final p in original.players) {
+        await controller.setStake(p.id, p.id == winner.id ? 0 : 1);
+      }
+      await mount(tester, GameScreen(controller: controller));
+      expect(find.text('Inzet'), findsNWidgets(4));
+      expect(find.text('Totaal'), findsNWidgets(4));
+      expect(find.text('€0'), findsOneWidget);
+      await tap(tester, find.widgetWithText(OutlinedButton, 'Ronde afronden'));
+      await tap(
+        tester,
+        find.widgetWithText(RadioListTile<String>, winner.name),
+      );
+      await tap(tester, find.text('Uitkomst bevestigen'));
+      expect(controller.activeGame!.scoreFor(winner.id), -1);
+      expect(controller.activeGame!.pot, 7);
+      expect(controller.activeGame!.dealerId, winner.id);
+      await tap(tester, find.widgetWithText(FilledButton, 'Inzetten'));
+      expect(find.byType(GameSettingsSheet), findsNothing);
+      expect(find.byType(StakeFlowSheet), findsOneWidget);
+      expect(controller.activeGame!.toepTrekAmount, 10);
+      expect(controller.activeGame!.allPassAmount, 3);
+    },
+  );
+
+  testWidgets(
+    'game information is read-only and resumes after restart without settings prompt',
+    (tester) async {
+      final saved = controller.activeGame!.toJson()
+        ..['roundConfigured'] = false;
+      repository.games[controller.activeGame!.id] = GameRecord.fromJson(saved);
+      controller = AppController(repository: repository);
+      await controller.initialize();
+      await mount(tester, GameScreen(controller: controller));
+      await tap(tester, find.byTooltip('Spelinformatie'));
+      expect(find.byType(GameInfoSheet), findsOneWidget);
+      expect(find.text('€10'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(GameInfoSheet),
+          matching: find.text('€3'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(TextField), findsNothing);
+      await tap(tester, find.text('Terug naar het spel'));
+      await tap(tester, find.widgetWithText(FilledButton, 'Inzetten'));
+      expect(find.byType(StakeFlowSheet), findsOneWidget);
+      expect(find.byType(GameSettingsSheet), findsNothing);
+    },
+  );
+
+  testWidgets('new game asks once and saves agreement with the initial game', (
+    tester,
+  ) async {
+    repository = MemoryRepository();
+    controller = AppController(repository: repository);
+    await controller.initialize();
+    await mount(tester, SetupScreen(controller: controller));
+    for (final name in ['Rens', 'Thijs']) {
+      await tester.enterText(find.byType(TextField), name);
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+    }
+    await tester.ensureVisible(find.text('Start met €2 in de pot'));
+    await tester.tap(find.text('Start met €2 in de pot'));
+    // Finish the modal transition without settling the busy start button.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(GameSettingsSheet), findsOneWidget);
+    expect(controller.activeGame, isNull);
+    await tester.enterText(find.byType(TextField).at(1), '10');
+    await tester.enterText(find.byType(TextField).at(2), '5');
+    tester.testTextInput.hide();
+    await tester.pump();
+    await tester.ensureVisible(find.text('Bedragen opslaan'));
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('Bedragen opslaan'));
+    await tester.pumpAndSettle();
+    expect(controller.activeGame!.toepTrekAmount, 10);
+    expect(controller.activeGame!.allPassAmount, 5);
+    expect(repository.games.values.single.toepTrekAmount, 10);
+    await tap(tester, find.text('Aan tafel!'));
+    await tap(tester, find.widgetWithText(FilledButton, 'Inzetten'));
+    expect(find.byType(GameSettingsSheet), findsNothing);
+    expect(find.byType(StakeFlowSheet), findsOneWidget);
+  });
 
   testWidgets(
     'sequential entry follows dealer, caps presets and reaches review',
@@ -129,10 +221,15 @@ void main() {
     (tester) async {
       await mount(
         tester,
-        Scaffold(body: RoundSettingsSheet(game: controller.activeGame!)),
+        Scaffold(body: GameSettingsSheet(game: controller.activeGame!)),
       );
       await tester.enterText(find.byType(TextField).first, '0');
-      await tap(tester, find.text('Bedragen opslaan'));
+      tester.testTextInput.hide();
+      await tester.pump();
+      await tester.ensureVisible(find.text('Bedragen opslaan'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('Bedragen opslaan'));
+      await tester.pumpAndSettle();
       expect(
         find.text('Vul twee hele bedragen van 1 t/m 1000000 in.'),
         findsOneWidget,

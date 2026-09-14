@@ -133,7 +133,6 @@ class GameRecord {
     this.dealerRevealed = false,
     this.toepTrekAmount = 2,
     this.allPassAmount = 2,
-    this.roundConfigured = false,
     this.undoStates = const [],
   });
 
@@ -155,7 +154,6 @@ class GameRecord {
   final bool dealerRevealed;
   final int toepTrekAmount;
   final int allPassAmount;
-  final bool roundConfigured;
   final List<String> undoStates;
 
   String? get lastWinnerId {
@@ -232,7 +230,6 @@ class GameRecord {
     bool? dealerRevealed,
     int? toepTrekAmount,
     int? allPassAmount,
-    bool? roundConfigured,
     List<String>? undoStates,
   }) => GameRecord(
     id: id,
@@ -240,7 +237,6 @@ class GameRecord {
     dealerRevealed: dealerRevealed ?? this.dealerRevealed,
     toepTrekAmount: toepTrekAmount ?? this.toepTrekAmount,
     allPassAmount: allPassAmount ?? this.allPassAmount,
-    roundConfigured: roundConfigured ?? this.roundConfigured,
     undoStates: undoStates ?? this.undoStates,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -272,7 +268,6 @@ class GameRecord {
     'dealerRevealed': dealerRevealed,
     'toepTrekAmount': toepTrekAmount,
     'allPassAmount': allPassAmount,
-    'roundConfigured': roundConfigured,
     'undoStates': undoStates,
     'closingPayouts': closingPayouts,
     'closingRoundIndex': closingRoundIndex,
@@ -309,7 +304,6 @@ class GameRecord {
     dealerRevealed: json['dealerRevealed'] as bool? ?? true,
     toepTrekAmount: json['toepTrekAmount'] as int? ?? 2,
     allPassAmount: json['allPassAmount'] as int? ?? 2,
-    roundConfigured: json['roundConfigured'] as bool? ?? false,
     undoStates: (json['undoStates'] as List?)?.cast<String>() ?? const [],
     closingRoundIndex: json['closingRoundIndex']! as int,
     draftStakes: _intMap(json['draftStakes']),

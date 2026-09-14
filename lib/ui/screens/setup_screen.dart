@@ -238,11 +238,15 @@ class _SetupScreenState extends State<SetupScreen> {
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
-        builder: (_) => RoundSettingsSheet(game: preview),
+        builder: (_) => GameSettingsSheet(game: preview),
       );
       if (amounts == null) return;
-      await widget.controller.startGame(_players, _unit);
-      await widget.controller.configureRound(amounts[0], amounts[1]);
+      await widget.controller.startGame(
+        _players,
+        _unit,
+        toepTrekAmount: amounts[0],
+        allPassAmount: amounts[1],
+      );
       if (!mounted) return;
       HapticFeedback.mediumImpact();
       await Navigator.of(context)

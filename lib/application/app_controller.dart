@@ -27,11 +27,21 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<GameRecord> startGame(List<String> names, ScoreUnit unit) async {
+  Future<GameRecord> startGame(
+    List<String> names,
+    ScoreUnit unit, {
+    int toepTrekAmount = 2,
+    int allPassAmount = 2,
+  }) async {
     if (_activeGame != null) {
       throw const GameRuleException('Er is al een actief spel.');
     }
-    final game = engine.startGame(names, unit);
+    final game = engine.startGame(
+      names,
+      unit,
+      toepTrekAmount: toepTrekAmount,
+      allPassAmount: allPassAmount,
+    );
     await repository.saveGame(game);
     await repository.rememberPlayers(game.players);
     _activeGame = game;
@@ -48,8 +58,6 @@ class AppController extends ChangeNotifier {
 
   Future<void> revealDealer() =>
       _replaceActive(engine.revealDealer(_requiredGame));
-  Future<void> configureRound(int toepTrek, int allPass) =>
-      _replaceActive(engine.configureRound(_requiredGame, toepTrek, allPass));
   Future<void> reorderPlayers(List<String> ids) =>
       _replaceActive(engine.reorderPlayers(_requiredGame, ids));
   Future<void> topUp(int amount) =>

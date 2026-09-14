@@ -34,14 +34,14 @@ Future<bool> confirmAction(
     ) ??
     false;
 
-class RoundSettingsSheet extends StatefulWidget {
-  const RoundSettingsSheet({super.key, required this.game});
+class GameSettingsSheet extends StatefulWidget {
+  const GameSettingsSheet({super.key, required this.game});
   final GameRecord game;
   @override
-  State<RoundSettingsSheet> createState() => _RoundSettingsSheetState();
+  State<GameSettingsSheet> createState() => _GameSettingsSheetState();
 }
 
-class _RoundSettingsSheetState extends State<RoundSettingsSheet> {
+class _GameSettingsSheetState extends State<GameSettingsSheet> {
   late final _trek = TextEditingController(
     text: '${widget.game.toepTrekAmount}',
   );
@@ -104,9 +104,13 @@ class _RoundSettingsSheetState extends State<RoundSettingsSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const StatusPill(
-            label: 'VOOR DEZE RONDE',
+            label: 'VOOR HET HELE SPEL',
             icon: Icons.tune_rounded,
             color: AppColors.gold,
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Deze bedragen staan vast voor het hele spel en kunnen daarna niet meer worden gewijzigd.',
           ),
           const SizedBox(height: 18),
           _amount(
@@ -625,6 +629,72 @@ class GameHistorySheet extends StatelessWidget {
                       );
                     },
                   ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class GameInfoSheet extends StatelessWidget {
+  const GameInfoSheet({super.key, required this.game});
+  final GameRecord game;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+    child: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SectionHeading(title: 'Spelinformatie'),
+          const SizedBox(height: 8),
+          const Text(
+            'Afgesproken bij de spelstart. Deze bedragen staan vast voor het hele spel.',
+          ),
+          const SizedBox(height: 20),
+          GlassCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'Toep-trek',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  game.unit.format(game.toepTrekAmount),
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(color: AppColors.gold),
+                ),
+                const Text('Winst uit de pot, maximaal wat er nog in zit.'),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(),
+                ),
+                Text(
+                  'Iedereen past',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                Text(
+                  game.unit.format(game.allPassAmount),
+                  style: Theme.of(context).textTheme.headlineMedium
+                      ?.copyWith(color: AppColors.gold),
+                ),
+                const Text(
+                  'Bij teruguittoepen betaalt de speler met de hoogste hand dit aan de pot.',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          const Text(
+            'Passen is 0 inzetten. Je blijft meespelen en kunt winnen, maar ontvangt dan 0 uit de pot.',
+          ),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Terug naar het spel'),
           ),
         ],
       ),

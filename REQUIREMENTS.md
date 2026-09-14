@@ -1,6 +1,6 @@
 # Pot Toepen — requirements
 
-Updated 11 September 2026 after the first trial evening.
+Updated 14 September 2026 for version 1.1.1 after further playtesting.
 Source: [Pot-toepen feedback oppakken](chatgpt-conversation://6aa303ed-2ed4-83eb-8c3c-6615986d5c7f), plus the clarification that Toep-trek pays at most the remaining pot.
 
 ## Product and platform
@@ -15,7 +15,7 @@ Names are trimmed, non-empty and unique. The roster stays fixed during a game; t
 - `pot = -sum(player scores)`. The pot must never become negative.
 - Every player explicitly chooses a stake for a normal round. Untouched and zero are distinct states; zero means passing.
 - Individual stakes may differ. Each stake is between zero and the pot at round start.
-- Normal round: the winner gains their own stake; each other player loses their own stake. A player who passed cannot win that normal round.
+- Normal round: the winner gains their own stake; each other player loses their own stake. Passing is a zero stake, not leaving the round. That player may win, receives zero, and becomes the next dealer. Other players still lose their own stakes.
 - All amounts and scores are stored as integers. Records are compared only within the same unit.
 
 Confirmed example: scores `[-2, -2, -3, -5]` imply a pot of 12. Stakes `[1, 1, 1, 5]` with the fourth player winning produce `[-3, -3, -4, 0]` and a pot of 10.
@@ -37,7 +37,7 @@ At game start, enter both amounts with presets (1, 2, 3, 5, 10) or custom whole-
 - Toep-trek winnings.
 - Everyone-pass / teruguittoepen penalty.
 
-Suggested defaults are 2, but the user explicitly accepts or changes them. Before each subsequent normal round, the previous amounts are offered again for confirmation or adjustment. Once stakes are entered, amounts are locked for that round.
+Suggested defaults are 2, but the user explicitly accepts or changes them once, before the game is created. The amounts are saved atomically with the initial game and stay fixed for the whole game. They are never requested again or editable during play, including after undo or restart. Existing games keep their currently stored amounts; older undo snapshots cannot alter that agreement. Read-only Spelinformatie is available from the info button beside the dealer and the three-dot menu.
 
 ### Toep-trek
 
@@ -53,11 +53,11 @@ The completed special round is recorded and can be undone.
 
 ## Round flow and presentation
 
-1. The single prominent pot display sits above the players. Do not repeat a pot shortcut on each player row.
-2. Press **Inzetten**. Offer the round amounts if needed, then enter stakes one player at a time in dealer-relative table order.
+1. Each player row has separate Totaal and Inzet columns. Inzet is highlighted in gold; an unentered stake shows a dash, while passing shows an explicit zero. Larger phone text uses a stacked layout. The single prominent pot display sits above the players. Do not repeat a pot shortcut on each player row.
+2. Press **Inzetten**. Enter stakes one player at a time in dealer-relative table order.
 3. Quick choices: Pass (0), 1, 2, 3, 4, 5, 10, 15, 20 and 25, plus whole-pot and custom entry. Values above the pot remain visible but disabled.
 4. Saving advances automatically. The current player's name slides out left and the next slides in from the right. A progress bar shows completed entries. A saved stake can be reopened to correct it.
-5. Press **Ronde afronden**. Show every stake, then select an eligible winner, then preview all score changes and the projected pot.
+5. Press **Ronde afronden**. Show every stake, then select any player as winner (including a zero stake), then preview all score changes and the projected pot.
 6. Only **Uitkomst bevestigen** commits the outcome. Closing the review without confirmation leaves scores unchanged.
 7. Celebrate the outcome and prepare a fresh round with the winner as dealer.
 
@@ -67,7 +67,7 @@ Use the existing dark green table, warm gold accents, readable signed scores, ge
 
 **Pot bijspekken** offers 1, 2, 3 or 5 per player, before entering stakes. Always preview the multiplication and total (for example, 4 × 2 = 8). Confirmation subtracts the amount from every score atomically. It appears in the timeline and can be undone.
 
-**Undo** always asks for confirmation. It reverses the most recent booked action or table/finale change. It may be repeated; arbitrary older actions cannot be selected. It restores scores, table order, dealer, entered stakes, settings and finale progress. There is no “ongedaan gemaakt” toast. Undo snapshots persist through app restart and store the round count instead of duplicating the entire prior round history.
+**Undo** always asks for confirmation. It reverses the most recent booked action or table/finale change. It may be repeated; arbitrary older actions cannot be selected. It restores scores, table order, dealer, entered stakes and finale progress. Game agreements remain fixed. There is no “ongedaan gemaakt” toast. Undo snapshots persist through app restart and store the round count instead of duplicating the entire prior round history.
 
 Track the highest pot of the current game and across locally stored games with the same unit. A new game record gets a modest confetti celebration; a new all-time record gets a longer, larger celebration. Ordinary wins get a smaller celebration. Deleted games no longer contribute to records.
 

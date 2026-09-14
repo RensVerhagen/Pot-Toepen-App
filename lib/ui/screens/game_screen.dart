@@ -70,6 +70,7 @@ class _GameScreenState extends State<GameScreen> {
                   PopupMenuButton<String>(
                     tooltip: 'Meer',
                     onSelected: (value) => switch (value) {
+                      'info' => _showGameInfo(game),
                       'history' => _showHistory(),
                       'games' => _showGames(),
                       'players' => _reorder(game),
@@ -81,6 +82,10 @@ class _GameScreenState extends State<GameScreen> {
                     },
                     icon: const Icon(Icons.more_horiz_rounded),
                     itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'info',
+                        child: Text('Spelinformatie'),
+                      ),
                       const PopupMenuItem(
                         value: 'players',
                         child: Text('Spelers wijzigen'),
@@ -175,6 +180,11 @@ class _GameScreenState extends State<GameScreen> {
                                 ],
                               ),
                             ),
+                            IconButton(
+                              tooltip: 'Spelinformatie',
+                              onPressed: () => _showGameInfo(game),
+                              icon: const Icon(Icons.info_outline_rounded),
+                            ),
                           ],
                         ),
                       ),
@@ -186,7 +196,6 @@ class _GameScreenState extends State<GameScreen> {
                           onStake: _openStakeFlow,
                           onProcess: _processNormal,
                           onClosing: _finish,
-                          onSettings: () => _configure(game),
                           onTopUp: _topUp,
                           onToepTrek: _toepTrek,
                         )
@@ -221,24 +230,15 @@ class _GameScreenState extends State<GameScreen> {
 
   bool _canUndo(GameRecord game) => !_busy && game.canUndo;
 
-  Future<bool> _configure(GameRecord game) async {
-    final values = await showModalBottomSheet<List<int>>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (_) => RoundSettingsSheet(game: game),
-    );
-    if (values == null) return false;
-    await widget.controller.configureRound(values[0], values[1]);
-    return true;
-  }
+  Future<void> _showGameInfo(GameRecord game) => showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (_) => GameInfoSheet(game: game),
+  );
 
   Future<void> _openStakeFlow(String playerId) async {
     if (_busy) return;
-    final game = widget.controller.activeGame!;
-    if (!game.roundConfigured && game.draftStakes.isEmpty) {
-      if (!await _configure(game) || !mounted) return;
-    }
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -352,11 +352,7 @@ class _GameScreenState extends State<GameScreen> {
   });
 
   Future<void> _toepTrek() => _run(() async {
-    var game = widget.controller.activeGame!;
-    if (!game.roundConfigured) {
-      if (!await _configure(game) || !mounted) return;
-      game = widget.controller.activeGame!;
-    }
+    final game = widget.controller.activeGame!;
     final amount = math.min(game.toepTrekAmount, game.pot);
     final player = await showModalBottomSheet<String>(
       context: context,
@@ -567,14 +563,13 @@ class _NormalRound extends StatelessWidget {
     required this.onStake,
     required this.onProcess,
     required this.onClosing,
-    required this.onSettings,
     required this.onTopUp,
     required this.onToepTrek,
   });
   final GameRecord game;
   final AppController controller;
   final ValueChanged<String> onStake;
-  final VoidCallback onProcess, onClosing, onSettings, onToepTrek;
+  final VoidCallback onProcess, onClosing, onToepTrek;
   final ValueChanged<int> onTopUp;
   @override
   Widget build(BuildContext context) {
@@ -601,71 +596,14 @@ class _NormalRound extends StatelessWidget {
         for (var i = 0; i < order.length; i++)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
-            child: GlassCard(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              borderColor: !ready && next.id == order[i].id
-                  ? AppColors.gold
-                  : null,
+            child: _RoundPlayerRow(
+              game: game,
+              player: order[i],
+              isNext: !ready && next.id == order[i].id,
               onTap: () => onStake(
                 game.draftStakes.containsKey(order[i].id)
                     ? order[i].id
                     : next.id,
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor: AppColors.raised,
-                    foregroundColor: AppColors.gold,
-                    child: Text('${i + 1}'),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          order[i].name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        Text(
-                          order[i].id == game.dealerId
-                              ? 'Deler'
-                              : !ready && next.id == order[i].id
-                              ? 'Als volgende aan de beurt'
-                              : 'Speler',
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    flex: 1,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: ScoreText(
-                            score: order[i].score,
-                            unit: game.unit,
-                          ),
-                        ),
-                        Text(
-                          !game.draftStakes.containsKey(order[i].id)
-                              ? 'Nog geen inzet'
-                              : game.draftStakes[order[i].id] == 0
-                              ? 'Gepast'
-                              : 'Inzet ${game.unit.format(game.draftStakes[order[i].id]!)}',
-                          textAlign: TextAlign.end,
-                          style: const TextStyle(
-                            color: AppColors.mutedCream,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ),
             ),
           ),
@@ -682,34 +620,12 @@ class _NormalRound extends StatelessWidget {
           label: const Text('Ronde afronden'),
         ),
         const SizedBox(height: 20),
-        GlassCard(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                children: [
-                  const Expanded(child: Text('Afspraken voor deze ronde')),
-                  IconButton(
-                    tooltip: 'Rondebedragen instellen',
-                    onPressed: game.draftStakes.isEmpty ? onSettings : null,
-                    icon: const Icon(Icons.tune_rounded),
-                  ),
-                ],
-              ),
-              Text(
-                'Toep-trek ${game.unit.format(game.toepTrekAmount)} · Iedereen past ${game.unit.format(game.allPassAmount)}',
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: game.draftStakes.isEmpty && game.pot > 0
-                    ? onToepTrek
-                    : null,
-                icon: const Icon(Icons.style_rounded),
-                label: const Text('Toep-trek'),
-              ),
-            ],
-          ),
+        OutlinedButton.icon(
+          onPressed: game.draftStakes.isEmpty && game.pot > 0
+              ? onToepTrek
+              : null,
+          icon: const Icon(Icons.style_rounded),
+          label: const Text('Toep-trek'),
         ),
         const SizedBox(height: 20),
         const SectionHeading(title: 'Pot bijspekken'),
@@ -735,6 +651,122 @@ class _NormalRound extends StatelessWidget {
           label: const Text('Spel afronden'),
         ),
       ],
+    );
+  }
+}
+
+class _RoundPlayerRow extends StatelessWidget {
+  const _RoundPlayerRow({
+    required this.game,
+    required this.player,
+    required this.isNext,
+    required this.onTap,
+  });
+  final GameRecord game;
+  final PlayerScore player;
+  final bool isNext;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final stake = game.draftStakes[player.id];
+    final name = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(player.name, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          isNext
+              ? 'Aan de beurt'
+              : player.id == game.dealerId
+              ? 'Deler'
+              : stake == 0
+              ? 'Speelt mee'
+              : 'Speler',
+          style: const TextStyle(color: AppColors.mutedCream, fontSize: 12),
+        ),
+      ],
+    );
+    final total = Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        const Text(
+          'Totaal',
+          style: TextStyle(color: AppColors.mutedCream, fontSize: 11),
+        ),
+        const SizedBox(height: 4),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: ScoreText(score: player.score, unit: game.unit),
+        ),
+      ],
+    );
+    final entry = Semantics(
+      label:
+          '${player.name}, inzet deze ronde: ${stake == null ? 'nog niet ingevuld' : game.unit.format(stake)}',
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 220),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.gold.withValues(alpha: stake == null ? .04 : .14),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.gold.withValues(alpha: stake == null ? .2 : .6),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            const Text(
+              'Inzet',
+              style: TextStyle(color: AppColors.gold, fontSize: 11),
+            ),
+            const SizedBox(height: 4),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                stake == null ? '—' : game.unit.format(stake),
+                style: const TextStyle(
+                  color: AppColors.gold,
+                  fontSize: 23,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return GlassCard(
+      onTap: onTap,
+      borderColor: isNext ? AppColors.gold : null,
+      padding: const EdgeInsets.all(14),
+      child: MediaQuery.textScalerOf(context).scale(16) > 22
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                name,
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: total),
+                    const SizedBox(width: 16),
+                    Expanded(child: entry),
+                  ],
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(flex: 3, child: name),
+                const SizedBox(width: 8),
+                Expanded(flex: 2, child: total),
+                const SizedBox(width: 12),
+                Expanded(flex: 2, child: entry),
+              ],
+            ),
     );
   }
 }
@@ -783,11 +815,11 @@ class _RoundReviewSheetState extends State<_RoundReviewSheet> {
                   for (final p in game.stakeOrder)
                     RadioListTile<String>(
                       value: p.id,
-                      enabled: game.allPassed || game.draftStakes[p.id] != 0,
+                      enabled: true,
                       title: Text(p.name),
                       subtitle: Text(
                         game.draftStakes[p.id] == 0
-                            ? 'Gepast'
+                            ? 'Inzet ${game.unit.format(0)} · speelt mee'
                             : 'Inzet ${game.unit.format(game.draftStakes[p.id]!)}',
                       ),
                     ),

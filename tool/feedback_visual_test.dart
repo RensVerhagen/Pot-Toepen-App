@@ -51,13 +51,12 @@ void main() {
   setUp(() async {
     controller = AppController(repository: MemoryRepository());
     await controller.initialize();
-    await controller.startGame([
-      'Rens',
-      'Thijs',
-      'Sophie',
-      'Daan',
-    ], ScoreUnit.euro);
-    await controller.configureRound(10, 3);
+    await controller.startGame(
+      ['Rens', 'Thijs', 'Sophie', 'Daan'],
+      ScoreUnit.euro,
+      toepTrekAmount: 10,
+      allPassAmount: 3,
+    );
     await controller.revealDealer();
     await controller.topUp(5);
   });
@@ -97,11 +96,25 @@ void main() {
     await capture(tester, 'stake-transition');
     await tester.pumpAndSettle();
   });
+
+  testWidgets('filled stakes and fixed game information', (tester) async {
+    final players = controller.activeGame!.players;
+    final amounts = [0, 1, 10, 20];
+    for (var i = 0; i < players.length; i++) {
+      await controller.setStake(players[i].id, amounts[i]);
+    }
+    await mount(tester, GameScreen(controller: controller));
+    await capture(tester, 'filled-stakes');
+    await tester.tap(find.byTooltip('Spelinformatie'));
+    await tester.pumpAndSettle();
+    await capture(tester, 'game-info');
+  });
+
   testWidgets('round agreement', (tester) async {
     await mount(
       tester,
       Scaffold(
-        body: SafeArea(child: RoundSettingsSheet(game: controller.activeGame!)),
+        body: SafeArea(child: GameSettingsSheet(game: controller.activeGame!)),
       ),
     );
     await capture(tester, 'round-settings');

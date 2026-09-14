@@ -20,7 +20,18 @@ class GameEngine {
   final DateTime Function() _now;
   final Random _random;
 
-  GameRecord startGame(List<String> rawNames, ScoreUnit unit) {
+  GameRecord startGame(
+    List<String> rawNames,
+    ScoreUnit unit, {
+    int toepTrekAmount = 2,
+    int allPassAmount = 2,
+  }) {
+    if (toepTrekAmount < 1 ||
+        toepTrekAmount > 1000000 ||
+        allPassAmount < 1 ||
+        allPassAmount > 1000000) {
+      throw const GameRuleException('Kies bedragen van 1 t/m 1000000.');
+    }
     final names = rawNames.map((name) => name.trim()).toList(growable: false);
     if (names.length < 2 || names.length > 8) {
       throw const GameRuleException('Een spel heeft 2 tot 8 spelers nodig.');
@@ -41,6 +52,8 @@ class GameEngine {
       status: GameStatus.active,
       phase: GamePhase.normal,
       unit: unit,
+      toepTrekAmount: toepTrekAmount,
+      allPassAmount: allPassAmount,
       players: [
         for (final name in names)
           PlayerScore(id: _id('player'), name: name, score: -1),
@@ -63,25 +76,6 @@ class GameEngine {
 
   GameRecord revealDealer(GameRecord game) =>
       game.copyWith(dealerRevealed: true);
-
-  GameRecord configureRound(GameRecord game, int toepTrek, int allPass) {
-    _requireNormalActive(game);
-    if (game.draftStakes.isNotEmpty) {
-      throw const GameRuleException('Wijzig de bedragen vóór het inzetten.');
-    }
-    if (toepTrek < 1 ||
-        allPass < 1 ||
-        toepTrek > 1000000 ||
-        allPass > 1000000) {
-      throw const GameRuleException('Kies bedragen van 1 t/m 1000000.');
-    }
-    return game.copyWith(
-      updatedAt: _now(),
-      toepTrekAmount: toepTrek,
-      allPassAmount: allPass,
-      roundConfigured: true,
-    );
-  }
 
   GameRecord reorderPlayers(GameRecord game, List<String> ids) {
     if (game.status != GameStatus.active ||
@@ -139,7 +133,7 @@ class GameEngine {
   GameRecord processToepTrek(GameRecord game, String playerId) {
     _requireNormalActive(game);
     _requirePlayer(game, playerId);
-    if (game.pot == 0 || !game.roundConfigured || game.draftStakes.isNotEmpty) {
+    if (game.pot == 0 || game.draftStakes.isNotEmpty) {
       throw const GameRuleException(
         'Kies Toep-trek vóór het inzetten met een gevulde pot.',
       );
@@ -179,7 +173,6 @@ class GameEngine {
         rounds: [...game.rounds, round],
         draftStakes: const {},
         clearDraftWinner: true,
-        roundConfigured: kind == RoundKind.topUp ? game.roundConfigured : false,
       ),
     );
   }
@@ -227,11 +220,6 @@ class GameEngine {
       throw const GameRuleException('Iedereen heeft gepast — teruguittoepen.');
     }
     final winnerId = game.draftWinnerPlayerId!;
-    if (game.draftStakes[winnerId] == 0) {
-      throw const GameRuleException(
-        'Een speler die past kan deze ronde niet winnen.',
-      );
-    }
     final potBefore = game.pot;
     final nextPlayers = <PlayerScore>[];
     for (final player in game.players) {
@@ -281,7 +269,7 @@ class GameEngine {
         updatedAt: timestamp,
         players: projection.players,
         rounds: [...game.rounds, round],
-        roundConfigured: false,
+
         draftStakes: const {},
         clearDraftWinner: true,
       ),
@@ -439,6 +427,10 @@ class GameEngine {
           .cast<String, Object?>();
       final count = snapshot['undoRoundCount'] as int?;
       return GameRecord.fromJson(snapshot).copyWith(
+        // Legacy snapshots may contain amounts from older per-round settings.
+        // Once upgraded, this game's current agreement stays fixed through undo.
+        toepTrekAmount: game.toepTrekAmount,
+        allPassAmount: game.allPassAmount,
         updatedAt: _now(),
         rounds: count == null ? null : game.rounds.take(count).toList(),
         undoStates: game.undoStates.sublist(0, game.undoStates.length - 1),
