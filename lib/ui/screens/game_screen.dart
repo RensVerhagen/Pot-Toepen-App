@@ -367,7 +367,7 @@ class _GameScreenState extends State<GameScreen> {
               children: [
                 const SectionHeading(title: 'Wie heeft Toep-trek?'),
                 const SizedBox(height: 12),
-                Text('Uitbetaling: ${game.unit.format(amount)}'),
+                Text('Punten uit de pot: ${game.unit.format(amount)}'),
                 for (final p in game.players)
                   ListTile(
                     title: Text(p.name),
@@ -383,7 +383,7 @@ class _GameScreenState extends State<GameScreen> {
     if (player == null || !mounted) return;
     if (!await confirmAction(
       context,
-      'Toep-trek uitbetalen?',
+      'Toep-trek bevestigen?',
       '${game.playerById(player).name} ontvangt ${game.unit.format(amount)}. Er blijft ${game.unit.format(game.pot - amount)} over.',
     )) {
       return;
@@ -630,7 +630,7 @@ class _NormalRound extends StatelessWidget {
         const SizedBox(height: 20),
         const SectionHeading(title: 'Pot bijspekken'),
         const SizedBox(height: 6),
-        const Text('Iedereen legt hetzelfde bedrag bij.'),
+        const Text('Iedereen legt hetzelfde aantal punten bij.'),
         const SizedBox(height: 10),
         Wrap(
           spacing: 8,
@@ -803,7 +803,7 @@ class _RoundReviewSheetState extends State<_RoundReviewSheet> {
             const SizedBox(height: 8),
             Text(
               game.allPassed
-                  ? 'Teruguittoepen · wie had de hoogste hand? Deze speler betaalt ${game.unit.format(game.allPassAmount)} aan de pot.'
+                  ? 'Teruguittoepen · wie had de hoogste hand? Deze speler legt ${game.unit.format(game.allPassAmount)} in de pot.'
                   : 'Controleer de inzetten en kies de winnaar.',
             ),
             const SizedBox(height: 14),
@@ -831,7 +831,7 @@ class _RoundReviewSheetState extends State<_RoundReviewSheet> {
             if (_winner != null && game.allPassed)
               GlassCard(
                 child: Text(
-                  '${game.playerById(_winner!).name} betaalt ${game.unit.format(game.allPassAmount)}. Pot: ${game.unit.format(game.pot)} → ${game.unit.format(game.pot + game.allPassAmount)}',
+                  '${game.playerById(_winner!).name} legt ${game.unit.format(game.allPassAmount)} in de pot. Pot: ${game.unit.format(game.pot)} → ${game.unit.format(game.pot + game.allPassAmount)}',
                 ),
               ),
             const SizedBox(height: 18),
@@ -1297,10 +1297,7 @@ class _StakeFlowSheetState extends State<StakeFlowSheet> {
                     ),
                     decoration: InputDecoration(
                       errorText: _error,
-                      prefixText: _game.unit == ScoreUnit.points
-                          ? null
-                          : _game.unit.symbol,
-                      suffixText: _game.unit == ScoreUnit.points ? ' pt' : null,
+                      suffixText: ' pt',
                     ),
                     onChanged: (value) {
                       _amount = int.tryParse(value) ?? 0;
@@ -1748,7 +1745,7 @@ class _RoundCelebrationState extends State<_RoundCelebration>
                                       : widget.round.kind == RoundKind.topUp
                                       ? '+${widget.game.unit.format(widget.round.potAfter - widget.round.potBefore)} in de pot'
                                       : widget.round.kind == RoundKind.allPass
-                                      ? '${winner.name} betaalt ${widget.game.unit.format(amount)}'
+                                      ? '${winner.name} legt ${widget.game.unit.format(amount)} in de pot'
                                       : '+${widget.game.unit.format(amount)}',
                                   style: const TextStyle(
                                     color: AppColors.black,

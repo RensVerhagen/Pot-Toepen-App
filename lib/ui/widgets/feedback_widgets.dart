@@ -83,7 +83,7 @@ class _GameSettingsSheetState extends State<GameSettingsSheet> {
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
-              labelText: 'Eigen bedrag · $label',
+              labelText: 'Eigen punten · $label',
               suffixText: widget.game.unit.symbol,
             ),
           ),
@@ -110,7 +110,7 @@ class _GameSettingsSheetState extends State<GameSettingsSheet> {
           ),
           const SizedBox(height: 18),
           const Text(
-            'Deze bedragen staan vast voor het hele spel en kunnen daarna niet meer worden gewijzigd.',
+            'Deze puntenaantallen staan vast voor het hele spel en kunnen daarna niet meer worden gewijzigd.',
           ),
           const SizedBox(height: 18),
           _amount(
@@ -121,7 +121,7 @@ class _GameSettingsSheetState extends State<GameSettingsSheet> {
           const SizedBox(height: 24),
           _amount(
             'Iedereen past',
-            'Wie de hoogste hand heeft, betaalt deze boete.',
+            'Wie de hoogste hand heeft, legt deze punten in de pot.',
             _pass,
           ),
           if (_error != null)
@@ -135,7 +135,7 @@ class _GameSettingsSheetState extends State<GameSettingsSheet> {
           const SizedBox(height: 24),
           FilledButton.icon(
             icon: const Icon(Icons.check_rounded),
-            label: const Text('Bedragen opslaan'),
+            label: const Text('Punten opslaan'),
             onPressed: () {
               final trek = int.tryParse(_trek.text);
               final pass = int.tryParse(_pass.text);
@@ -146,7 +146,7 @@ class _GameSettingsSheetState extends State<GameSettingsSheet> {
                   trek > 1000000 ||
                   pass > 1000000) {
                 setState(
-                  () => _error = 'Vul twee hele bedragen van 1 t/m 1000000 in.',
+                  () => _error = 'Vul twee hele puntenaantallen van 1 t/m 1000000 in.',
                 );
               } else {
                 Navigator.pop(context, [trek, pass]);
@@ -426,7 +426,7 @@ class _GameChartState extends State<GameChart> {
           Text('Pot & cumulatieve scores · ${g.unit.label}'),
           const SizedBox(height: 18),
           Semantics(
-            label: 'Grafiek van pot en spelersscores. Gebruik de schuifregelaar voor bedragen per stap.',
+            label: 'Grafiek van pot en spelersscores. Gebruik de schuifregelaar voor punten per stap.',
             child: SizedBox(
               height: 220,
               child: CustomPaint(
@@ -651,7 +651,7 @@ class GameInfoSheet extends StatelessWidget {
           const SectionHeading(title: 'Spelinformatie'),
           const SizedBox(height: 8),
           const Text(
-            'Afgesproken bij de spelstart. Deze bedragen staan vast voor het hele spel.',
+            'Afgesproken bij de spelstart. Deze puntenaantallen staan vast voor het hele spel.',
           ),
           const SizedBox(height: 20),
           GlassCard(
@@ -682,7 +682,7 @@ class GameInfoSheet extends StatelessWidget {
                       ?.copyWith(color: AppColors.gold),
                 ),
                 const Text(
-                  'Bij teruguittoepen betaalt de speler met de hoogste hand dit aan de pot.',
+                  'Bij teruguittoepen legt de speler met de hoogste hand deze punten in de pot.',
                 ),
               ],
             ),

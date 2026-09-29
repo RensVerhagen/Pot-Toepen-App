@@ -23,7 +23,6 @@ class _SetupScreenState extends State<SetupScreen> {
   final _nameController = TextEditingController();
   final _focusNode = FocusNode();
   final List<String> _players = [];
-  ScoreUnit _unit = ScoreUnit.euro;
   bool _saving = false;
 
   @override
@@ -166,29 +165,6 @@ class _SetupScreenState extends State<SetupScreen> {
                   ),
                 ),
               const SizedBox(height: 30),
-              const SectionHeading(title: 'Waar spelen jullie om?'),
-              const SizedBox(height: 12),
-              SegmentedButton<ScoreUnit>(
-                segments: [
-                  for (final unit in ScoreUnit.values)
-                    ButtonSegment(
-                      value: unit,
-                      label: Text(unit.label),
-                      icon: Text(
-                        unit.symbol,
-                        style: const TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                    ),
-                ],
-                selected: {_unit},
-                onSelectionChanged: (selection) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _unit = selection.first);
-                },
-                showSelectedIcon: false,
-                multiSelectionEnabled: false,
-              ),
-              const SizedBox(height: 30),
               FilledButton.icon(
                 onPressed: _players.length >= 2 && !_saving ? _start : null,
                 icon: _saving
@@ -200,7 +176,7 @@ class _SetupScreenState extends State<SetupScreen> {
                 label: Text(
                   _players.length < 2
                       ? 'Voeg minimaal 2 spelers toe'
-                      : 'Start met ${_unit.format(_players.length)} in de pot',
+                      : 'Start met ${ScoreUnit.points.format(_players.length)} in de pot',
                 ),
               ),
             ],
@@ -233,7 +209,7 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _start() async {
     setState(() => _saving = true);
     try {
-      final preview = widget.controller.engine.startGame(_players, _unit);
+      final preview = widget.controller.engine.startGame(_players, ScoreUnit.points);
       final amounts = await showModalBottomSheet<List<int>>(
         context: context,
         isScrollControlled: true,
@@ -243,7 +219,7 @@ class _SetupScreenState extends State<SetupScreen> {
       if (amounts == null) return;
       await widget.controller.startGame(
         _players,
-        _unit,
+        ScoreUnit.points,
         toepTrekAmount: amounts[0],
         allPassAmount: amounts[1],
       );

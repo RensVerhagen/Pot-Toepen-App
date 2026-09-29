@@ -7,7 +7,7 @@ Source: [Pot-toepen feedback oppakken](chatgpt-conversation://6aa303ed-2ed4-83eb
 
 An offline Android scorekeeper for 2–8 people at the same table. There is one active game, automatically saved locally in SQLite after each change. No account or network is required. Existing saved games remain readable. iOS remains a future target.
 
-Names are trimmed, non-empty and unique. The roster stays fixed during a game; the table order can change. Previously used names remain available for subsequent games. Units are whole points, euros, dollars or pounds; decimals are not supported.
+Names are trimmed, non-empty and unique. The roster stays fixed during a game; the table order can change. Previously used names remain available for subsequent games. Scores use whole points only; decimals are not supported. Existing locally saved games with legacy currency labels load as points without changing their values.
 
 ## Bookkeeping
 
@@ -16,7 +16,7 @@ Names are trimmed, non-empty and unique. The roster stays fixed during a game; t
 - Every player explicitly chooses a stake for a normal round. Untouched and zero are distinct states; zero means passing.
 - Individual stakes may differ. Each stake is between zero and the pot at round start.
 - Normal round: the winner gains their own stake; each other player loses their own stake. Passing is a zero stake, not leaving the round. That player may win, receives zero, and becomes the next dealer. Other players still lose their own stakes.
-- All amounts and scores are stored as integers. Records are compared only within the same unit.
+- All amounts and scores are stored as integers. Pot records use points.
 
 Confirmed example: scores `[-2, -2, -3, -5]` imply a pot of 12. Stakes `[1, 1, 1, 5]` with the fourth player winning produce `[-3, -3, -4, 0]` and a pot of 10.
 

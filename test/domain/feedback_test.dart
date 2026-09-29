@@ -13,13 +13,13 @@ void main() {
       random: Random(42),
       now: () => DateTime(2026, 9, 11, 20),
     );
-    game = engine.startGame(['Rens', 'Thijs', 'Jan', 'Piet'], ScoreUnit.euro);
+    game = engine.startGame(['Rens', 'Thijs', 'Jan', 'Piet'], ScoreUnit.points);
   });
 
   test('game agreements persist through rounds, restart and undo', () {
     game = engine.startGame(
       ['Rens', 'Thijs'],
-      ScoreUnit.euro,
+      ScoreUnit.points,
       toepTrekAmount: 10,
       allPassAmount: 5,
     );
@@ -41,12 +41,12 @@ void main() {
     for (final value in [0, -1, 1000001]) {
       expect(
         () =>
-            engine.startGame(['A', 'B'], ScoreUnit.euro, toepTrekAmount: value),
+            engine.startGame(['A', 'B'], ScoreUnit.points, toepTrekAmount: value),
         throwsA(isA<GameRuleException>()),
       );
       expect(
         () =>
-            engine.startGame(['A', 'B'], ScoreUnit.euro, allPassAmount: value),
+            engine.startGame(['A', 'B'], ScoreUnit.points, allPassAmount: value),
         throwsA(isA<GameRuleException>()),
       );
     }
@@ -55,7 +55,7 @@ void main() {
   test('legacy per-round undo keeps the current game agreement', () {
     game = engine.startGame(
       ['Rens', 'Thijs'],
-      ScoreUnit.euro,
+      ScoreUnit.points,
       toepTrekAmount: 10,
       allPassAmount: 5,
     );
@@ -131,7 +131,7 @@ void main() {
     () {
       game = engine.startGame(
         ['Rens', 'Thijs', 'Jan', 'Piet'],
-        ScoreUnit.euro,
+        ScoreUnit.points,
         toepTrekAmount: 10,
         allPassAmount: 3,
       );
@@ -157,7 +157,7 @@ void main() {
     () {
       game = engine.startGame(
         ['Rens', 'Thijs', 'Jan', 'Piet'],
-        ScoreUnit.euro,
+        ScoreUnit.points,
         toepTrekAmount: 2,
         allPassAmount: 3,
       );
@@ -180,7 +180,7 @@ void main() {
     () {
       game = engine.startGame(
         ['Rens', 'Thijs', 'Jan', 'Piet'],
-        ScoreUnit.euro,
+        ScoreUnit.points,
         toepTrekAmount: 10,
         allPassAmount: 5,
       );

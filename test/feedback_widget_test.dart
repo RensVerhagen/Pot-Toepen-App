@@ -18,7 +18,7 @@ void main() {
     await controller.initialize();
     await controller.startGame(
       ['Rens', 'Thijs', 'Jan', 'Piet'],
-      ScoreUnit.euro,
+      ScoreUnit.points,
       toepTrekAmount: 10,
       allPassAmount: 3,
     );
@@ -64,7 +64,7 @@ void main() {
       await mount(tester, GameScreen(controller: controller));
       expect(find.text('Inzet'), findsNWidgets(4));
       expect(find.text('Totaal'), findsNWidgets(4));
-      expect(find.text('€0'), findsOneWidget);
+      expect(find.text('0 pt'), findsOneWidget);
       await tap(tester, find.widgetWithText(OutlinedButton, 'Ronde afronden'));
       await tap(
         tester,
@@ -93,11 +93,11 @@ void main() {
       await mount(tester, GameScreen(controller: controller));
       await tap(tester, find.byTooltip('Spelinformatie'));
       expect(find.byType(GameInfoSheet), findsOneWidget);
-      expect(find.text('€10'), findsOneWidget);
+      expect(find.text('10 pt'), findsOneWidget);
       expect(
         find.descendant(
           of: find.byType(GameInfoSheet),
-          matching: find.text('€3'),
+          matching: find.text('3 pt'),
         ),
         findsOneWidget,
       );
@@ -121,8 +121,8 @@ void main() {
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();
     }
-    await tester.ensureVisible(find.text('Start met €2 in de pot'));
-    await tester.tap(find.text('Start met €2 in de pot'));
+    await tester.ensureVisible(find.text('Start met 2 pt in de pot'));
+    await tester.tap(find.text('Start met 2 pt in de pot'));
     // Finish the modal transition without settling the busy start button.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -132,9 +132,9 @@ void main() {
     await tester.enterText(find.byType(TextField).at(2), '5');
     tester.testTextInput.hide();
     await tester.pump();
-    await tester.ensureVisible(find.text('Bedragen opslaan'));
+    await tester.ensureVisible(find.text('Punten opslaan'));
     await tester.pump(const Duration(milliseconds: 500));
-    await tester.tap(find.text('Bedragen opslaan'));
+    await tester.tap(find.text('Punten opslaan'));
     await tester.pumpAndSettle();
     expect(controller.activeGame!.toepTrekAmount, 10);
     expect(controller.activeGame!.allPassAmount, 5);
@@ -155,7 +155,7 @@ void main() {
       await tap(tester, find.widgetWithText(FilledButton, 'Inzetten'));
       expect(find.text('INZET VOOR'), findsOneWidget);
       final disabled = tester.widget<FilledButton>(
-        find.widgetWithText(FilledButton, '€25'),
+        find.widgetWithText(FilledButton, '25 pt'),
       );
       expect(disabled.onPressed, isNull);
       for (final p in order) {
@@ -166,7 +166,7 @@ void main() {
           ),
           findsOneWidget,
         );
-        await tap(tester, find.widgetWithText(FilledButton, '€1'));
+        await tap(tester, find.widgetWithText(FilledButton, '1 pt'));
         expect(controller.activeGame!.draftStakes[p.id], 1);
       }
       expect(find.byType(StakeFlowSheet), findsNothing);
@@ -226,12 +226,12 @@ void main() {
       await tester.enterText(find.byType(TextField).first, '0');
       tester.testTextInput.hide();
       await tester.pump();
-      await tester.ensureVisible(find.text('Bedragen opslaan'));
+      await tester.ensureVisible(find.text('Punten opslaan'));
       await tester.pump(const Duration(milliseconds: 500));
-      await tester.tap(find.text('Bedragen opslaan'));
+      await tester.tap(find.text('Punten opslaan'));
       await tester.pumpAndSettle();
       expect(
-        find.text('Vul twee hele bedragen van 1 t/m 1000000 in.'),
+        find.text('Vul twee hele puntenaantallen van 1 t/m 1000000 in.'),
         findsOneWidget,
       );
       expect(tester.takeException(), isNull);
@@ -265,7 +265,7 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Pot €12'), findsOneWidget);
+    expect(find.text('Pot 12 pt'), findsOneWidget);
     expect(find.byType(FilterChip), findsNWidgets(5));
     await tester.tap(find.byType(Slider), warnIfMissed: false);
     await tester.pumpAndSettle();
@@ -278,14 +278,13 @@ void main() {
   });
 
   test(
-    'records are per unit and recompute after deleting a saved game',
+    'records recompute after deleting a saved game',
     () async {
       await controller.topUp(5);
       final game = await controller.completeGame();
-      expect(controller.recordFor(ScoreUnit.euro), 24);
-      expect(controller.recordFor(ScoreUnit.dollar), 0);
+      expect(controller.recordFor(ScoreUnit.points), 24);
       await controller.deleteHistoryGame(game.id);
-      expect(controller.recordFor(ScoreUnit.euro), 0);
+      expect(controller.recordFor(ScoreUnit.points), 0);
     },
   );
 

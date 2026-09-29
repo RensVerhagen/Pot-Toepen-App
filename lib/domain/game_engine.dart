@@ -30,7 +30,7 @@ class GameEngine {
         toepTrekAmount > 1000000 ||
         allPassAmount < 1 ||
         allPassAmount > 1000000) {
-      throw const GameRuleException('Kies bedragen van 1 t/m 1000000.');
+      throw const GameRuleException('Kies puntenaantallen van 1 t/m 1000000.');
     }
     final names = rawNames.map((name) => name.trim()).toList(growable: false);
     if (names.length < 2 || names.length > 8) {
@@ -364,7 +364,7 @@ class GameEngine {
     final isFinished = nextIndex == game.closingPayouts.length;
     if (isFinished && projection.potAfter != 0) {
       throw const GameRuleException(
-        'De finale moet de volledige pot uitbetalen.',
+        'De finale moet alle punten uit de pot verdelen.',
       );
     }
     final round = RoundRecord(

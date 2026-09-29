@@ -5,7 +5,7 @@ A polished, offline-first scorekeeper for Pot Toepen. The MVP is built for Andro
 ## What is included
 
 - New games for 2–8 players, each starting at `-1`
-- Points, euro, dollar, and pound display units
+- Points-only scoring, with existing local games preserved
 - Random first-dealer reveal, winner-based turn order, and drag-to-reorder seating
 - Sequential animated stake entry, including pass, large presets and whole-pot entry
 - Toep-trek winnings and everyone-pass penalties fixed once at game start

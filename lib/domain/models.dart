@@ -1,25 +1,15 @@
 import 'dart:convert';
 
-enum ScoreUnit { points, euro, dollar, pound }
+enum ScoreUnit { points }
 
 extension ScoreUnitX on ScoreUnit {
-  String get label => switch (this) {
-    ScoreUnit.points => 'Punten',
-    ScoreUnit.euro => 'Euro',
-    ScoreUnit.dollar => 'Dollar',
-    ScoreUnit.pound => 'Pond',
-  };
+  String get label => 'Punten';
 
-  String get symbol => switch (this) {
-    ScoreUnit.points => 'pt',
-    ScoreUnit.euro => '€',
-    ScoreUnit.dollar => r'$',
-    ScoreUnit.pound => '£',
-  };
+  String get symbol => 'pt';
 
   String format(int value, {bool showPlus = false}) {
     final sign = showPlus && value > 0 ? '+' : '';
-    return this == ScoreUnit.points ? '$sign$value pt' : '$sign$symbol$value';
+    return '$sign$value pt';
   }
 }
 
@@ -286,7 +276,8 @@ class GameRecord {
         : DateTime.parse(json['completedAt']! as String),
     status: GameStatus.values.byName(json['status']! as String),
     phase: GamePhase.values.byName(json['phase']! as String),
-    unit: ScoreUnit.values.byName(json['unit']! as String),
+    // Earlier versions offered currency labels for the same local score values.
+    unit: ScoreUnit.points,
     players: (json['players']! as List<Object?>)
         .map(
           (item) =>
