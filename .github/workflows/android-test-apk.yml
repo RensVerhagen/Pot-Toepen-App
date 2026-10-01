@@ -60,7 +60,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
+          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | tr -d '\r')"
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
             echo "Expected pubspec.yaml version in the form 1.2.3+4, got: $version" >&2
             exit 1
