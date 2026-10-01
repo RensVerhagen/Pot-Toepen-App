@@ -56,6 +56,12 @@ Build a test APK:
 flutter build apk --debug
 ```
 
+## Test-APK's via GitHub
+
+Elke pull request naar `main` bouwt en test een APK. Na een push naar `main` (bijvoorbeeld een gemergede pull request) publiceert GitHub Actions automatisch een [pre-release](https://github.com/RensVerhagen/Pot-Toepen-App/releases) met de APK en een SHA-256-controlesom. Je kunt de workflow ook handmatig starten vanaf `main`. Een pre-release bevat een debugbuild en is nog niet geschikt voor de Play Store.
+
+De APK uit een workflowrun staat daarnaast 30 dagen als Actions-artifact. De pre-release is de plek om een testversie langer te bewaren of te delen. Omdat GitHub Actions per run een nieuwe debug-sleutel kan gebruiken, is installatie als update over een andere testbuild niet gegarandeerd. Verwijder een bestaande installatie alleen als je de lokaal opgeslagen spellen kunt missen.
+
 ## Platform scope
 
 Android is the MVP target. The Flutter project includes an iOS target to preserve a straightforward future migration path, but the iOS app is not currently tested, signed, or part of the MVP acceptance scope.
