@@ -3,7 +3,7 @@ name: Android test APK
 on:
   push:
     branches:
-      - codex/pot-toepen-feedback
+      - main
   pull_request:
     branches:
       - main
@@ -40,3 +40,60 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+  prerelease:
+    name: Publish test pre-release
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download tested APK
+        uses: actions/download-artifact@v4
+        with:
+          name: pot-toepen-android-test-apk
+          path: release
+      - name: Prepare release assets
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\+[0-9]+$ ]]; then
+            echo "Expected pubspec.yaml version in the form 1.2.3+4, got: $version" >&2
+            exit 1
+          fi
+
+          version_name="${version%%+*}"
+          build_number="${version##*+}"
+          tag="test-v${version_name}-b${build_number}-r${GITHUB_RUN_ID}-a${GITHUB_RUN_ATTEMPT}"
+          apk="Pot-Toepen-${version_name}-build${build_number}-run${GITHUB_RUN_ID}-attempt${GITHUB_RUN_ATTEMPT}-debug.apk"
+          mv release/app-debug.apk "release/$apk"
+          (cd release && sha256sum "$apk" > "$apk.sha256")
+
+          cat > release/notes.md <<EOF
+          Automatisch gebouwde test-APK van commit \`${GITHUB_SHA}\` (appversie ${version}).
+
+          Dit is een **debugbuild**, niet de Play Store-versie. GitHub Actions gebruikt een tijdelijke debug-sleutel. Een update over een lokaal gebouwde APK of een andere CI-build kan daarom mislukken door een andere handtekening. Verwijderen en opnieuw installeren wist mogelijk lokaal opgeslagen spelgegevens.
+
+          Controleer de download met het bijgevoegde \`.sha256\`-bestand.
+          EOF
+
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "apk=$apk" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.prepare.outputs.tag }}
+          APK: ${{ steps.prepare.outputs.apk }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          gh release create "$TAG" "release/$APK" "release/$APK.sha256" \
+            --target "$GITHUB_SHA" \
+            --title "Pot Toepen $VERSION test-APK" \
+            --notes-file release/notes.md \
+            --prerelease \
+            --latest=false
