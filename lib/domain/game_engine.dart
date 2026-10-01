@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'models.dart';
@@ -19,7 +20,18 @@ class GameEngine {
   final DateTime Function() _now;
   final Random _random;
 
-  GameRecord startGame(List<String> rawNames, ScoreUnit unit) {
+  GameRecord startGame(
+    List<String> rawNames,
+    ScoreUnit unit, {
+    int toepTrekAmount = 2,
+    int allPassAmount = 2,
+  }) {
+    if (toepTrekAmount < 1 ||
+        toepTrekAmount > 1000000 ||
+        allPassAmount < 1 ||
+        allPassAmount > 1000000) {
+      throw const GameRuleException('Kies puntenaantallen van 1 t/m 1000000.');
+    }
     final names = rawNames.map((name) => name.trim()).toList(growable: false);
     if (names.length < 2 || names.length > 8) {
       throw const GameRuleException('Een spel heeft 2 tot 8 spelers nodig.');
@@ -33,17 +45,147 @@ class GameEngine {
     }
 
     final timestamp = _now();
-    return GameRecord(
+    final game = GameRecord(
       id: _id('game'),
       createdAt: timestamp,
       updatedAt: timestamp,
       status: GameStatus.active,
       phase: GamePhase.normal,
       unit: unit,
+      toepTrekAmount: toepTrekAmount,
+      allPassAmount: allPassAmount,
       players: [
         for (final name in names)
           PlayerScore(id: _id('player'), name: name, score: -1),
       ],
+    );
+    return game.copyWith(
+      initialDealerId: game.players[_random.nextInt(game.players.length)].id,
+    );
+  }
+
+  GameRecord _remember(GameRecord before, GameRecord after) => after.copyWith(
+    undoStates: [
+      ...before.undoStates,
+      jsonEncode({
+        ...before.copyWith(rounds: const [], undoStates: const []).toJson(),
+        'undoRoundCount': before.rounds.length,
+      }),
+    ],
+  );
+
+  GameRecord revealDealer(GameRecord game) =>
+      game.copyWith(dealerRevealed: true);
+
+  GameRecord reorderPlayers(GameRecord game, List<String> ids) {
+    if (game.status != GameStatus.active ||
+        ids.length != game.players.length ||
+        ids.toSet().length != ids.length ||
+        !game.players.every((p) => ids.contains(p.id))) {
+      throw const GameRuleException('De spelers moeten hetzelfde blijven.');
+    }
+    if (game.draftStakes.isNotEmpty) {
+      throw const GameRuleException('Rond eerst de huidige inzetten af.');
+    }
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: _now(),
+        players: ids.map(game.playerById).toList(),
+      ),
+    );
+  }
+
+  GameRecord topUp(GameRecord game, int amount) {
+    _requireNormalActive(game);
+    if (amount < 1 || amount > 1000000 || game.draftStakes.isNotEmpty) {
+      throw const GameRuleException('Spek de pot bij vóór het inzetten.');
+    }
+    return _recordTransfer(
+      game,
+      RoundKind.topUp,
+      game.dealerId,
+      [for (final p in game.players) p.copyWith(score: p.score - amount)],
+      stakes: {for (final p in game.players) p.id: amount},
+    );
+  }
+
+  GameRecord processAllPass(GameRecord game, String playerId) {
+    _requireNormalActive(game);
+    _requirePlayer(game, playerId);
+    if (!game.allPassed) {
+      throw const GameRuleException('Iedere speler moet eerst passen.');
+    }
+    return _recordTransfer(
+      game,
+      RoundKind.allPass,
+      playerId,
+      [
+        for (final p in game.players)
+          p.id == playerId
+              ? p.copyWith(score: p.score - game.allPassAmount)
+              : p,
+      ],
+      stakes: {playerId: game.allPassAmount},
+    );
+  }
+
+  GameRecord processToepTrek(GameRecord game, String playerId) {
+    _requireNormalActive(game);
+    _requirePlayer(game, playerId);
+    if (game.pot == 0 || game.draftStakes.isNotEmpty) {
+      throw const GameRuleException(
+        'Kies Toep-trek vóór het inzetten met een gevulde pot.',
+      );
+    }
+    final amount = min(game.toepTrekAmount, game.pot);
+    return _recordTransfer(game, RoundKind.toepTrek, playerId, [
+      for (final p in game.players)
+        p.id == playerId ? p.copyWith(score: p.score + amount) : p,
+    ], payout: amount);
+  }
+
+  GameRecord _recordTransfer(
+    GameRecord game,
+    RoundKind kind,
+    String playerId,
+    List<PlayerScore> players, {
+    Map<String, int> stakes = const {},
+    int? payout,
+  }) {
+    final round = RoundRecord(
+      id: _id('round'),
+      kind: kind,
+      createdAt: _now(),
+      winnerPlayerId: playerId,
+      potBefore: game.pot,
+      potAfter: -players.fold<int>(0, (sum, p) => sum + p.score),
+      scoresBefore: _scoreMap(game.players),
+      scoresAfter: _scoreMap(players),
+      stakes: stakes,
+      payout: payout,
+    );
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: _now(),
+        players: players,
+        rounds: [...game.rounds, round],
+        draftStakes: const {},
+        clearDraftWinner: true,
+      ),
+    );
+  }
+
+  GameRecord completeGame(GameRecord game) {
+    if (game.status != GameStatus.active || game.draftStakes.isNotEmpty) {
+      throw const GameRuleException('Rond eerst de lopende ronde af.');
+    }
+    return game.copyWith(
+      updatedAt: _now(),
+      completedAt: _now(),
+      status: GameStatus.completed,
+      clearDraftWinner: true,
     );
   }
 
@@ -73,6 +215,9 @@ class GameEngine {
       throw const GameRuleException(
         'Vul voor iedere speler een inzet in en kies een winnaar.',
       );
+    }
+    if (game.allPassed) {
+      throw const GameRuleException('Iedereen heeft gepast — teruguittoepen.');
     }
     final winnerId = game.draftWinnerPlayerId!;
     final potBefore = game.pot;
@@ -118,12 +263,16 @@ class GameEngine {
       scoresAfter: _scoreMap(projection.players),
       stakes: projection.stakes,
     );
-    return game.copyWith(
-      updatedAt: timestamp,
-      players: projection.players,
-      rounds: [...game.rounds, round],
-      draftStakes: const {},
-      clearDraftWinner: true,
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: timestamp,
+        players: projection.players,
+        rounds: [...game.rounds, round],
+
+        draftStakes: const {},
+        clearDraftWinner: true,
+      ),
     );
   }
 
@@ -146,13 +295,16 @@ class GameEngine {
   GameRecord startClosing(GameRecord game, int roundCount) {
     _requireNormalActive(game);
     final payouts = payoutSchedule(game.pot, roundCount);
-    return game.copyWith(
-      updatedAt: _now(),
-      phase: GamePhase.closing,
-      closingPayouts: payouts,
-      closingRoundIndex: 0,
-      draftStakes: const {},
-      clearDraftWinner: true,
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: _now(),
+        phase: GamePhase.closing,
+        closingPayouts: payouts,
+        closingRoundIndex: 0,
+        draftStakes: const {},
+        clearDraftWinner: true,
+      ),
     );
   }
 
@@ -165,12 +317,15 @@ class GameEngine {
         'Maak eerst alle gespeelde finalerondes ongedaan.',
       );
     }
-    return game.copyWith(
-      updatedAt: _now(),
-      phase: GamePhase.normal,
-      closingPayouts: const [],
-      closingRoundIndex: 0,
-      clearDraftWinner: true,
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: _now(),
+        phase: GamePhase.normal,
+        closingPayouts: const [],
+        closingRoundIndex: 0,
+        clearDraftWinner: true,
+      ),
     );
   }
 
@@ -209,7 +364,7 @@ class GameEngine {
     final isFinished = nextIndex == game.closingPayouts.length;
     if (isFinished && projection.potAfter != 0) {
       throw const GameRuleException(
-        'De finale moet de volledige pot uitbetalen.',
+        'De finale moet alle punten uit de pot verdelen.',
       );
     }
     final round = RoundRecord(
@@ -223,14 +378,17 @@ class GameEngine {
       scoresAfter: _scoreMap(projection.players),
       payout: projection.payout,
     );
-    return game.copyWith(
-      updatedAt: timestamp,
-      completedAt: isFinished ? timestamp : null,
-      status: isFinished ? GameStatus.completed : GameStatus.active,
-      players: projection.players,
-      rounds: [...game.rounds, round],
-      closingRoundIndex: nextIndex,
-      clearDraftWinner: true,
+    return _remember(
+      game,
+      game.copyWith(
+        updatedAt: timestamp,
+
+        status: GameStatus.active,
+        players: projection.players,
+        rounds: [...game.rounds, round],
+        closingRoundIndex: nextIndex,
+        clearDraftWinner: true,
+      ),
     );
   }
 
@@ -264,6 +422,20 @@ class GameEngine {
   }
 
   GameRecord undo(GameRecord game) {
+    if (game.status == GameStatus.active && game.undoStates.isNotEmpty) {
+      final snapshot = (jsonDecode(game.undoStates.last) as Map)
+          .cast<String, Object?>();
+      final count = snapshot['undoRoundCount'] as int?;
+      return GameRecord.fromJson(snapshot).copyWith(
+        // Legacy snapshots may contain amounts from older per-round settings.
+        // Once upgraded, this game's current agreement stays fixed through undo.
+        toepTrekAmount: game.toepTrekAmount,
+        allPassAmount: game.allPassAmount,
+        updatedAt: _now(),
+        rounds: count == null ? null : game.rounds.take(count).toList(),
+        undoStates: game.undoStates.sublist(0, game.undoStates.length - 1),
+      );
+    }
     if (game.status != GameStatus.active || game.rounds.isEmpty) {
       throw const GameRuleException('Er is geen ronde om ongedaan te maken.');
     }

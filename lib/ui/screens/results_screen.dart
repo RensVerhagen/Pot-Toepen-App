@@ -6,6 +6,7 @@ import '../../application/app_controller.dart';
 import '../../domain/models.dart';
 import '../app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/feedback_widgets.dart';
 
 class ResultsScreen extends StatelessWidget {
   const ResultsScreen({
@@ -42,7 +43,7 @@ class ResultsScreen extends StatelessWidget {
                 child: _ResultsHero(
                   completed: completed,
                   winnerName: ranking.first.name,
-                  rounds: game.rounds.length,
+                  rounds: game.normalRoundCount + game.payoutRoundCount,
                 ),
               ),
               const SizedBox(height: 26),
@@ -92,6 +93,13 @@ class ResultsScreen extends StatelessWidget {
                   ],
                 ),
               ),
+              const SizedBox(height: 20),
+              GameChart(game: game),
+              if (game.pot > 0)
+                Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Text('Resterende pot: ${game.unit.format(game.pot)}'),
+                ),
               if (completed) ...[
                 const SizedBox(height: 20),
                 FilledButton.icon(
@@ -179,7 +187,7 @@ class _ResultsHero extends StatelessWidget {
         ),
         const SizedBox(height: 18),
         Text(
-          completed ? 'Pot uitgespeeld' : 'Pot afgebroken',
+          completed ? 'Spel afgerond' : 'Pot afgebroken',
           style: Theme.of(context).textTheme.labelLarge?.copyWith(
             color: completed ? AppColors.gold : AppColors.coral,
             letterSpacing: 1.6,

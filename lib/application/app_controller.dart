@@ -27,17 +27,57 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<GameRecord> startGame(List<String> names, ScoreUnit unit) async {
+  Future<GameRecord> startGame(
+    List<String> names,
+    ScoreUnit unit, {
+    int toepTrekAmount = 2,
+    int allPassAmount = 2,
+  }) async {
     if (_activeGame != null) {
       throw const GameRuleException('Er is al een actief spel.');
     }
-    final game = engine.startGame(names, unit);
+    final game = engine.startGame(
+      names,
+      unit,
+      toepTrekAmount: toepTrekAmount,
+      allPassAmount: allPassAmount,
+    );
     await repository.saveGame(game);
     await repository.rememberPlayers(game.players);
     _activeGame = game;
     _rememberedPlayers = await repository.loadRememberedPlayers();
     notifyListeners();
     return game;
+  }
+
+  int recordFor(ScoreUnit unit) => [
+    for (final game in [..._history, ?_activeGame])
+      if (game.unit == unit) game.highestPot,
+    0,
+  ].reduce((a, b) => a > b ? a : b);
+
+  Future<void> revealDealer() =>
+      _replaceActive(engine.revealDealer(_requiredGame));
+  Future<void> reorderPlayers(List<String> ids) =>
+      _replaceActive(engine.reorderPlayers(_requiredGame, ids));
+  Future<void> topUp(int amount) =>
+      _replaceActive(engine.topUp(_requiredGame, amount));
+  Future<void> processAllPass(String id) =>
+      _replaceActive(engine.processAllPass(_requiredGame, id));
+  Future<void> processToepTrek(String id) =>
+      _replaceActive(engine.processToepTrek(_requiredGame, id));
+  Future<GameRecord> completeGame() async {
+    final next = engine.completeGame(_requiredGame);
+    await _saveTerminalOrActive(next);
+    return next;
+  }
+
+  Future<void> clearAllData() async {
+    await repository.clearAllData();
+    _activeGame = null;
+    _history = const [];
+    _rememberedPlayers = const [];
+    notifyListeners();
   }
 
   Future<void> setStake(String playerId, int stake) async {
@@ -52,6 +92,7 @@ class AppController extends ChangeNotifier {
     final game = _activeGame;
     if (game == null ||
         !game.hasCompleteDraft ||
+        game.allPassed ||
         game.phase != GamePhase.normal) {
       return null;
     }

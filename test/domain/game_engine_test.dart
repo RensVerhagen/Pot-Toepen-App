@@ -17,7 +17,7 @@ void main() {
       'Piet',
       'Klaas',
       'Rens',
-    ], ScoreUnit.euro);
+    ], ScoreUnit.points);
 
     expect(game.players.map((player) => player.score), everyElement(-1));
     expect(game.pot, 4);
@@ -44,7 +44,7 @@ void main() {
   });
 
   test('processes the confirmed normal-round example', () {
-    var game = engine.startGame(['P1', 'P2', 'P3', 'P4'], ScoreUnit.euro);
+    var game = engine.startGame(['P1', 'P2', 'P3', 'P4'], ScoreUnit.points);
     game = game.copyWith(
       players: [
         game.players[0].copyWith(score: -2),
@@ -101,7 +101,7 @@ void main() {
   });
 
   test('closing rounds empty the pot without changing losers', () {
-    var game = engine.startGame(['A', 'B', 'C'], ScoreUnit.euro);
+    var game = engine.startGame(['A', 'B', 'C'], ScoreUnit.points);
     game = game.copyWith(
       players: [
         game.players[0].copyWith(score: -5),
@@ -118,8 +118,9 @@ void main() {
       game = engine.processPayoutRound(game);
     }
 
-    expect(game.status, GameStatus.completed);
+    expect(game.status, GameStatus.active);
     expect(game.pot, 0);
+    expect(engine.completeGame(game).status, GameStatus.completed);
     expect(game.players[1].score, originalLoserScore);
     expect(game.players[0].score, 5);
   });
@@ -155,12 +156,23 @@ void main() {
   });
 
   test('game aggregate survives JSON round-trip', () {
-    final game = engine.startGame(['A', 'B'], ScoreUnit.dollar);
+    final game = engine.startGame(['A', 'B'], ScoreUnit.points);
     final decoded = GameRecord.decode(game.encode());
 
     expect(decoded.id, game.id);
-    expect(decoded.unit, ScoreUnit.dollar);
+    expect(decoded.unit, ScoreUnit.points);
     expect(decoded.players.map((player) => player.name), ['A', 'B']);
     expect(decoded.pot, 2);
+  });
+
+  test('legacy currency-labelled saves remain readable as points', () {
+    final game = engine.startGame(['A', 'B'], ScoreUnit.points);
+    for (final legacyUnit in ['euro', 'dollar', 'pound']) {
+      final saved = game.toJson()..['unit'] = legacyUnit;
+      final loaded = GameRecord.fromJson(saved);
+      expect(loaded.unit, ScoreUnit.points);
+      expect(loaded.pot, game.pot);
+      expect(loaded.players.map((player) => player.score), [-1, -1]);
+    }
   });
 }

@@ -1,25 +1,15 @@
 import 'dart:convert';
 
-enum ScoreUnit { points, euro, dollar, pound }
+enum ScoreUnit { points }
 
 extension ScoreUnitX on ScoreUnit {
-  String get label => switch (this) {
-    ScoreUnit.points => 'Punten',
-    ScoreUnit.euro => 'Euro',
-    ScoreUnit.dollar => 'Dollar',
-    ScoreUnit.pound => 'Pond',
-  };
+  String get label => 'Punten';
 
-  String get symbol => switch (this) {
-    ScoreUnit.points => 'pt',
-    ScoreUnit.euro => '€',
-    ScoreUnit.dollar => r'$',
-    ScoreUnit.pound => '£',
-  };
+  String get symbol => 'pt';
 
   String format(int value, {bool showPlus = false}) {
     final sign = showPlus && value > 0 ? '+' : '';
-    return this == ScoreUnit.points ? '$sign$value pt' : '$sign$symbol$value';
+    return '$sign$value pt';
   }
 }
 
@@ -27,7 +17,17 @@ enum GameStatus { active, completed, abandoned }
 
 enum GamePhase { normal, closing }
 
-enum RoundKind { normal, payout }
+enum RoundKind { normal, payout, allPass, toepTrek, topUp }
+
+extension RoundKindX on RoundKind {
+  String get label => switch (this) {
+    RoundKind.normal => 'Speelronde',
+    RoundKind.payout => 'Finaleronde',
+    RoundKind.allPass => 'Iedereen past',
+    RoundKind.toepTrek => 'Toep-trek',
+    RoundKind.topUp => 'Pot bijspekken',
+  };
+}
 
 class PlayerScore {
   const PlayerScore({
@@ -119,6 +119,11 @@ class GameRecord {
     this.draftStakes = const {},
     this.draftWinnerPlayerId,
     this.completedAt,
+    this.initialDealerId,
+    this.dealerRevealed = false,
+    this.toepTrekAmount = 2,
+    this.allPassAmount = 2,
+    this.undoStates = const [],
   });
 
   final String id;
@@ -135,10 +140,50 @@ class GameRecord {
   final Map<String, int> draftStakes;
   final String? draftWinnerPlayerId;
 
+  final String? initialDealerId;
+  final bool dealerRevealed;
+  final int toepTrekAmount;
+  final int allPassAmount;
+  final List<String> undoStates;
+
+  String? get lastWinnerId {
+    for (final round in rounds.reversed) {
+      if (round.kind != RoundKind.topUp) return round.winnerPlayerId;
+    }
+    return null;
+  }
+
+  String get dealerId => lastWinnerId ?? initialDealerId ?? players.last.id;
+
+  List<PlayerScore> get stakeOrder {
+    final start =
+        (players.indexWhere((p) => p.id == dealerId) + 1) % players.length;
+    return List.generate(
+      players.length,
+      (i) => players[(start + i) % players.length],
+    );
+  }
+
+  bool get allPassed =>
+      draftStakes.length == players.length &&
+      draftStakes.values.every((stake) => stake == 0);
+
+  int get highestPot => [
+    pot,
+    players.length,
+    for (final round in rounds) ...[round.potBefore, round.potAfter],
+  ].reduce((a, b) => a > b ? a : b);
+
+  bool get canUndo => undoStates.isNotEmpty || rounds.isNotEmpty;
+
   int get pot => -players.fold<int>(0, (sum, player) => sum + player.score);
 
-  int get normalRoundCount =>
-      rounds.where((round) => round.kind == RoundKind.normal).length;
+  int get normalRoundCount => rounds
+      .where(
+        (round) =>
+            round.kind != RoundKind.payout && round.kind != RoundKind.topUp,
+      )
+      .length;
 
   int get payoutRoundCount =>
       rounds.where((round) => round.kind == RoundKind.payout).length;
@@ -171,8 +216,18 @@ class GameRecord {
     Map<String, int>? draftStakes,
     String? draftWinnerPlayerId,
     bool clearDraftWinner = false,
+    String? initialDealerId,
+    bool? dealerRevealed,
+    int? toepTrekAmount,
+    int? allPassAmount,
+    List<String>? undoStates,
   }) => GameRecord(
     id: id,
+    initialDealerId: initialDealerId ?? this.initialDealerId,
+    dealerRevealed: dealerRevealed ?? this.dealerRevealed,
+    toepTrekAmount: toepTrekAmount ?? this.toepTrekAmount,
+    allPassAmount: allPassAmount ?? this.allPassAmount,
+    undoStates: undoStates ?? this.undoStates,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
@@ -199,6 +254,11 @@ class GameRecord {
     'unit': unit.name,
     'players': players.map((player) => player.toJson()).toList(),
     'rounds': rounds.map((round) => round.toJson()).toList(),
+    'initialDealerId': initialDealerId,
+    'dealerRevealed': dealerRevealed,
+    'toepTrekAmount': toepTrekAmount,
+    'allPassAmount': allPassAmount,
+    'undoStates': undoStates,
     'closingPayouts': closingPayouts,
     'closingRoundIndex': closingRoundIndex,
     'draftStakes': draftStakes,
@@ -216,7 +276,8 @@ class GameRecord {
         : DateTime.parse(json['completedAt']! as String),
     status: GameStatus.values.byName(json['status']! as String),
     phase: GamePhase.values.byName(json['phase']! as String),
-    unit: ScoreUnit.values.byName(json['unit']! as String),
+    // Earlier versions offered currency labels for the same local score values.
+    unit: ScoreUnit.points,
     players: (json['players']! as List<Object?>)
         .map(
           (item) =>
@@ -230,6 +291,11 @@ class GameRecord {
         )
         .toList(growable: false),
     closingPayouts: (json['closingPayouts']! as List<Object?>).cast<int>(),
+    initialDealerId: json['initialDealerId'] as String?,
+    dealerRevealed: json['dealerRevealed'] as bool? ?? true,
+    toepTrekAmount: json['toepTrekAmount'] as int? ?? 2,
+    allPassAmount: json['allPassAmount'] as int? ?? 2,
+    undoStates: (json['undoStates'] as List?)?.cast<String>() ?? const [],
     closingRoundIndex: json['closingRoundIndex']! as int,
     draftStakes: _intMap(json['draftStakes']),
     draftWinnerPlayerId: json['draftWinnerPlayerId'] as String?,

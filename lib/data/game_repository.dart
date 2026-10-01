@@ -11,6 +11,8 @@ abstract class GameRepository {
 
   Future<void> clearHistory();
 
+  Future<void> clearAllData();
+
   Future<List<RememberedPlayer>> loadRememberedPlayers();
 
   Future<void> rememberPlayers(Iterable<PlayerScore> players);

@@ -87,6 +87,12 @@ class SqliteGameRepository implements GameRepository {
       _database.delete('games', where: 'id = ?', whereArgs: [gameId]);
 
   @override
+  Future<void> clearAllData() => _database.transaction((transaction) async {
+    await transaction.delete('games');
+    await transaction.delete('remembered_players');
+  });
+
+  @override
   Future<void> clearHistory() => _database.delete(
     'games',
     where: 'status != ?',

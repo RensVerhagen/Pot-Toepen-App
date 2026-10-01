@@ -6,6 +6,7 @@ import '../../application/app_controller.dart';
 import '../../domain/models.dart';
 import '../app_theme.dart';
 import '../widgets/app_widgets.dart';
+import '../widgets/feedback_widgets.dart';
 import 'game_screen.dart';
 import 'results_screen.dart';
 import 'saved_players_screen.dart';
@@ -29,6 +30,23 @@ class HomeScreen extends StatelessWidget {
               sliver: SliverList.list(
                 children: [
                   _Header(
+                    onHistory: () async {
+                      final game = await showModalBottomSheet<GameRecord>(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        builder: (_) =>
+                            GameHistorySheet(controller: controller),
+                      );
+                      if (game != null && context.mounted) {
+                        await Navigator.push(
+                          context,
+                          potRoute(
+                            ResultsScreen(controller: controller, game: game),
+                          ),
+                        );
+                      }
+                    },
                     onPlayers: () => Navigator.of(context).push(
                       potRoute(SavedPlayersScreen(controller: controller)),
                     ),
@@ -157,7 +175,8 @@ class HomeScreen extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onPlayers});
+  const _Header({required this.onPlayers, required this.onHistory});
+  final VoidCallback onHistory;
 
   final VoidCallback onPlayers;
 
@@ -186,10 +205,20 @@ class _Header extends StatelessWidget {
           ],
         ),
       ),
-      IconButton.filledTonal(
-        tooltip: 'Opgeslagen spelers',
-        onPressed: onPlayers,
-        icon: const Icon(Icons.group_outlined),
+      PopupMenuButton<String>(
+        tooltip: 'Meer',
+        icon: const Icon(Icons.more_horiz_rounded),
+        onSelected: (value) => value == 'history' ? onHistory() : onPlayers(),
+        itemBuilder: (_) => [
+          const PopupMenuItem(
+            value: 'history',
+            child: Text('Spelgeschiedenis'),
+          ),
+          const PopupMenuItem(
+            value: 'players',
+            child: Text('Opgeslagen spelers'),
+          ),
+        ],
       ),
     ],
   );

@@ -5,13 +5,19 @@ A polished, offline-first scorekeeper for Pot Toepen. The MVP is built for Andro
 ## What is included
 
 - New games for 2–8 players, each starting at `-1`
-- Points, euro, dollar, and pound display units
-- Explicit per-player stakes, including `0`, plus a one-tap `POT` action
-- Winner selection and a complete score/pot preview before processing
+- Points-only scoring, with existing local games preserved
+- Random first-dealer reveal, winner-based turn order, and drag-to-reorder seating
+- Sequential animated stake entry, including pass, large presets and whole-pot entry
+- Toep-trek winnings and everyone-pass penalties fixed once at game start
+- Confirmed group contributions and persistent, repeatable undo
+- Clear total/round-stake columns; zero-stake players can still win
+- Dedicated round actions with stake review, winner selection and confirmation
 - A configurable final phase that empties the remaining pot exactly
 - Round history and repeatable undo
 - Automatic local save and active-game resume
-- Remembered player names and local game history
+- Remembered player names and local game history with individual/full deletion
+- Explicit game completion and a combined interactive pot/player timeline
+- Per-game and all-time pot records with different celebration levels
 - Final standings shared through Android's share sheet, including WhatsApp
 - Purpose-built dark card-table styling, transitions, haptics, and round celebrations
 
